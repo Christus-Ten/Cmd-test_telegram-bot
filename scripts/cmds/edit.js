@@ -1,110 +1,94 @@
 const axios = require("axios");
 
-/* ================= CONFIG ================= */
-
 const CONFIG_URL =
   "https://raw.githubusercontent.com/noobcore404/NC-STORE/main/NCApiUrl.json";
 
-/* ================= META ================= */
-
 const nix = {
   name: "edit",
-  aliases: ["imgedit"],
+  aliases: ["imgedit", "gen"],
+  version: "1.1.0",
   author: "Christus",
-  version: "1.0.1",
   cooldown: 5,
   role: 0,
   prefix: true,
-  description: "Generate or edit images using AI (reply to image to edit)",
-  category: "AI",
-  guide: "{p}edit <prompt> (reply to an image to edit)",
+  category: "ai",
+  description: "Generate or edit images using AI",
+  guide:
+    "{p}edit <prompt>\n" +
+    "Reply to an image to edit it\n" +
+    "Example: {p}edit make it anime style",
 };
-
-/* ================= HELPERS ================= */
 
 async function getRenzApi() {
   const { data } = await axios.get(CONFIG_URL, { timeout: 10000 });
-  if (!data || !data.renz) {
-    throw new Error("Renz API URL not found");
-  }
+  if (!data || !data.renz) throw new Error("API config not found");
   return data.renz;
 }
 
-function getReplyImage(msg) {
-  const reply = msg.reply_to_message;
-  if (!reply || !reply.photo) return null;
-
-  // Telegram photo → prendre la meilleure qualité
-  const photo = reply.photo[reply.photo.length - 1];
-  return photo?.file_id || null;
-}
-
-/* ================= COMMAND ================= */
-
 async function onStart({ bot, message, msg, chatId, args }) {
   const prompt = args.join(" ").trim();
-
   if (!prompt) {
-    return message.reply(
-      "❌ Please provide a prompt.\nExample: edit a cyberpunk city"
-    );
+    return message.reply("❌ Please provide a prompt.");
   }
 
-  let waitMsg;
+  const waitMsg = await bot.sendMessage(
+    chatId,
+    "🖼️ Processing your image...",
+    { reply_to_message_id: msg.message_id }
+  );
+
   try {
-    waitMsg = await bot.sendMessage(
-      chatId,
-      "⏳ Processing image...",
-      { reply_to_message_id: msg.message_id }
-    );
-
     const BASE_URL = await getRenzApi();
-    const fileId = getReplyImage(msg);
 
-    let apiURL =
-      `${BASE_URL}/api/gptimage?prompt=${encodeURIComponent(prompt)}`;
+    let apiURL = `${BASE_URL}/api/gptimage?prompt=${encodeURIComponent(prompt)}`;
+    let mode = "gen";
 
-    if (fileId) {
-      apiURL += `&ref=${encodeURIComponent(fileId)}`;
+    const replied = msg.reply_to_message?.photo?.[0];
+
+    if (replied && replied.file_id) {
+      apiURL += `&ref=${encodeURIComponent(replied.file_id)}`;
+      mode = "edit";
     } else {
       apiURL += `&width=512&height=512`;
     }
 
-    const imgStream = await axios({
-      url: apiURL,
-      method: "GET",
-      responseType: "stream",
+    // 🔍 SAFE FETCH
+    const res = await axios.get(apiURL, {
+      responseType: "arraybuffer",
+      validateStatus: () => true,
     });
 
-    if (waitMsg) {
-      await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
+    const contentType = res.headers["content-type"] || "";
+
+    if (!contentType.startsWith("image/")) {
+      throw new Error("API did not return an image");
     }
+
+    await bot.deleteMessage(chatId, waitMsg.message_id);
 
     await bot.sendPhoto(
       chatId,
-      imgStream.data,
+      Buffer.from(res.data),
       {
         caption:
-          `🖼️ ${fileId ? "Image edited successfully" : "Image generated successfully"}\n` +
+          `${mode === "edit" ? "🖌 IMAGE EDITED" : "🖼 IMAGE GENERATED"}\n` +
+          `━━━━━━━━━━━━━━━\n` +
           `📝 Prompt: ${prompt}`,
         reply_to_message_id: msg.message_id,
       }
     );
 
   } catch (err) {
-    console.error("EDIT CMD ERROR:", err.message);
+    console.error("EDIT CMD ERROR:", err?.response?.data || err);
 
-    if (waitMsg) {
-      await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
-    }
-
-    await message.reply(
-      "❌ Failed to process image. Please try again later."
+    await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
+    await bot.sendMessage(
+      chatId,
+      "❌ Failed to process image. Please try again later.",
+      { reply_to_message_id: msg.message_id }
     );
   }
 }
-
-/* ================= EXPORT ================= */
 
 module.exports = {
   nix,
