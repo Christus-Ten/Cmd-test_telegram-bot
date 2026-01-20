@@ -7,7 +7,7 @@ const axios = require("axios");
 const nix = {
   name: "top",
   version: "3.3",
-  author: "Christus",
+  author: "Christus (Nix Port)",
   cooldown: 10,
   role: 0,
   category: "classement",
@@ -62,7 +62,6 @@ async function drawTopBoard(users, type, bot, wallPath) {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
 
-  // Fond
   if (wallPath && fs.existsSync(wallPath)) {
     const bgImg = await loadImage(wallPath);
     ctx.drawImage(bgImg, 0, 0, W, H);
@@ -74,13 +73,11 @@ async function drawTopBoard(users, type, bot, wallPath) {
     ctx.fillRect(0, 0, W, H);
   }
 
-  // Titre
   ctx.font = "bold 60px Arial";
   ctx.fillStyle = "#00ffee";
   ctx.textAlign = "center";
   ctx.fillText(type === "rank" ? "CLASSEMENT NIVEAUX" : "CLASSEMENT RICHESSE", W / 2, 80);
 
-  // Podium (Top 3 Simplifié pour l'exemple)
   for (let i = 0; i < Math.min(users.length, 3); i++) {
     const u = users[i];
     const x = [W/2-90, W/2-300, W/2+120][i];
@@ -100,7 +97,7 @@ async function drawTopBoard(users, type, bot, wallPath) {
     ctx.fillText(u.name.slice(0, 10), x + size/2, y + size + 40);
   }
 
-  const filePath = path.join(__dirname, `top_${Date.now()}.png`);
+  const filePath = path.join(__dirname, `top_${type}_${Date.now()}.png`);
   fs.writeFileSync(filePath, canvas.toBuffer("image/png"));
   return filePath;
 }
@@ -111,29 +108,47 @@ async function onStart({ bot, msg, chatId, args }) {
   const type = args[0]?.toLowerCase();
   const userId = msg.from.id;
 
-  // Gestion du Wallpaper
+  // Sécurité Chemin Base de données
+  const dbPath = path.join(process.cwd(), 'database', 'balance.json');
+  const dbDir = path.dirname(dbPath);
+
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+  if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({}));
+
   if (type === "setwall") {
     if (!msg.reply_to_message || !msg.reply_to_message.photo) {
       return bot.sendMessage(chatId, "❌ Répondez à une image avec /top setwall");
     }
-    const fileId = msg.reply_to_message.photo[msg.reply_to_message.photo.length - 1].file_id;
-    const fileLink = await bot.getFileLink(fileId);
-    const wallPath = path.join(__dirname, `wall_${userId}.jpg`);
-    const res = await axios.get(fileLink, { responseType: 'arraybuffer' });
-    fs.writeFileSync(wallPath, res.data);
-    return bot.sendMessage(chatId, "✅ Fond d'écran mis à jour !");
+    try {
+      const fileId = msg.reply_to_message.photo[msg.reply_to_message.photo.length - 1].file_id;
+      const fileLink = await bot.getFileLink(fileId);
+      const wallPath = path.join(__dirname, `wall_${userId}.jpg`);
+      const res = await axios.get(fileLink, { responseType: 'arraybuffer' });
+      fs.writeFileSync(wallPath, res.data);
+      return bot.sendMessage(chatId, "✅ Fond d'écran mis à jour !");
+    } catch (e) {
+      return bot.sendMessage(chatId, "❌ Erreur lors du téléchargement de l'image.");
+    }
   }
 
   if (!["rank", "money"].includes(type)) {
     return bot.sendMessage(chatId, "⚠️ Utilisation : /top rank ou /top money");
   }
 
-  // Simulation de données (à lier avec ta DB balance.json)
-  const balances = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'database', 'balance.json'), 'utf8'));
-  
+  let balances;
+  try {
+    balances = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  } catch (e) {
+    balances = {};
+  }
+
+  if (Object.keys(balances).length === 0) {
+    return bot.sendMessage(chatId, "📊 Aucun utilisateur dans la base de données.");
+  }
+
   let sorted = Object.keys(balances).map(id => ({
     id: id,
-    name: "Joueur", // Il faudrait récupérer le nom via bot.getChatMember
+    name: balances[id].name || "Joueur",
     money: balances[id].money || 0,
     exp: balances[id].exp || 0
   }));
@@ -143,14 +158,21 @@ async function onStart({ bot, msg, chatId, args }) {
 
   sorted = sorted.slice(0, 10);
 
-  const wallPath = path.join(__dirname, `wall_${userId}.jpg`);
-  const imagePath = await drawTopBoard(sorted, type, bot, wallPath);
+  try {
+    const wallPath = path.join(__dirname, `wall_${userId}.jpg`);
+    const imagePath = await drawTopBoard(sorted, type, bot, wallPath);
 
-  await bot.sendPhoto(chatId, imagePath, {
-    caption: `🏆 Voici le Top 10 ${type === "rank" ? "des niveaux" : "des plus riches"} !`
-  });
+    await bot.sendPhoto(chatId, imagePath, {
+      caption: `🏆 Voici le Top 10 ${type === "rank" ? "des niveaux" : "des plus riches"} !`
+    });
 
-  fs.unlinkSync(imagePath);
+    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+  } catch (err) {
+    bot.sendMessage(chatId, "❌ Erreur lors de la génération du classement visuel.");
+  }
 }
 
-module.exports = { nix, onStart };
+module.exports = {
+  nix,
+  onStart
+};
