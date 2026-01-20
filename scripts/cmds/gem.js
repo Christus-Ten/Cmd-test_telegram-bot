@@ -9,7 +9,7 @@ const nix = {
   version: "1.0.0",
   author: "Christus",
   cooldown: 5,
-  role: 2,
+  role: 0,
   prefix: true,
   category: "ai",
   description: "Generate artistic AI images",
