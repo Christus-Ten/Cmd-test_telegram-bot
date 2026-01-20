@@ -33,8 +33,8 @@
   },
   "mongoDB": {
     "enabled": false,
-    "url": "MONGODB_URL",
-    "dbName": "DATABASE_NAME"
+    "url": "mongodb+srv://Christus:voldigo225@cluster0.gykt2by.mongodb.net/?appName=Cluster0",
+    "dbName": "mongodb"
   },
   "apiKeys": {
     "gemini": "",
