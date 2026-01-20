@@ -1,151 +1,88 @@
-const fs = require("fs");
-const path = require("path");
 const axios = require("axios");
-const { createCanvas, loadImage } = require("canvas");
+const fs = require("fs-extra");
+const path = require("path");
+const stream = require("stream");
+const { promisify } = require("util");
 
-const TMP_DIR = path.join(__dirname, "tmp");
-if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
+const pipeline = promisify(stream.pipeline);
 
 const nix = {
   name: "nijiv5",
   aliases: ["niji"],
-  version: "2.0.0",
-  author: "Vincenzo | Christus Dev",
+  version: "2.1.0",
+  author: "Christus",
   cooldown: 20,
   role: 2,
   prefix: true,
   category: "AI",
   description: "Generate Niji v5 anime-style images",
-  guide:
-    "{p}nijiv5 <prompt> [--ar <ratio>] [--1]\n" +
-    "Example: {p}nijiv5 a magical girl --ar 16:9 --1",
+  guide: "{p}nijiv5 <prompt> [--ar <ratio>] [--1]",
 };
 
-async function onStart({ bot, message, msg, chatId, args, input }) {
+async function onStart({ bot, message, msg, chatId, args }) {
   if (!args.length) return message.reply("❌ Please provide a prompt.");
 
-  let prompt = "";
-  let ratio = "1:1";
-  let single = false;
+  const prompt = args.join(" ").trim();
+  const processingMsg = await bot.sendMessage(chatId, "🎨 Generating image...", { reply_to_message_id: msg.message_id });
 
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--ar" && args[i + 1]) {
-      ratio = args[++i];
-    } else if (args[i] === "--1") {
-      single = true;
-    } else {
-      prompt += args[i] + " ";
-    }
-  }
-  prompt = prompt.trim();
-  if (!prompt) return message.reply("❌ Please provide a prompt.");
-
-  const waitMsg = await bot.sendMessage(chatId, "🎨 Generating images, please wait...", {
-    reply_to_message_id: msg.message_id,
-  });
+  const session_hash = Math.random().toString(36).substring(2, 13);
+  const payload = { data: [prompt, "", Math.floor(Math.random() * 1e9)], fn_index: 5, session_hash };
 
   try {
-    /* ===== FETCH TOKEN ===== */
-    const apiCfg = await axios.get(
-      "https://raw.githubusercontent.com/Savage-Army/extras/refs/heads/main/api.json"
-    );
-    const tokenUrl = apiCfg.data.token;
-    const tokenRes = await axios.get(tokenUrl);
-    const token = tokenRes.data.bearer;
+    await axios.post("https://asahina2k-animagine-xl-3-1.hf.space/queue/join", payload, {
+      headers: { "User-Agent": "Mozilla/5.0", "Content-Type": "application/json" },
+    });
 
-    const params = { prompt, ratio, token };
-    const calls = single ? 1 : 4;
+    let imageURL = null;
+    const maxAttempts = 15;
 
-    /* ===== GENERATE IMAGES ===== */
-    const results = await Promise.all(
-      Array.from({ length: calls }).map(() =>
-        axios.get("https://vincenzojin-hub-1.onrender.com/nijiv5/gen", { params })
-      )
-    );
-
-    const imageUrls = results.flatMap(r => r.data.imageUrls);
-    if (!imageUrls.length) throw new Error("No images returned from API");
-
-    /* ===== DOWNLOAD ===== */
-    const paths = [];
-    for (let i = 0; i < imageUrls.length; i++) {
-      const p = path.join(TMP_DIR, `niji_${Date.now()}_${i}.jpg`);
-      const res = await axios.get(imageUrls[i], { responseType: "stream" });
-      await new Promise((ok, err) => {
-        const w = fs.createWriteStream(p);
-        res.data.pipe(w);
-        w.on("finish", ok);
-        w.on("error", err);
+    // Poll HF Space until the image is ready
+    for (let i = 0; i < maxAttempts; i++) {
+      const res = await axios.get("https://asahina2k-animagine-xl-3-1.hf.space/queue/data", {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        params: { session_hash },
+        timeout: 30000,
       });
-      paths.push(p);
+
+      const lines = res.data.split("\n\n");
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        try {
+          const json = JSON.parse(line.slice(5).trim());
+          if (json.msg === "process_completed" && json.success) {
+            imageURL = json.output?.data?.[0]?.[0]?.image?.url || null;
+            break;
+          }
+        } catch {}
+      }
+
+      if (imageURL) break;
+      await new Promise(r => setTimeout(r, 2000)); // wait 2s before next poll
     }
 
-    await bot.deleteMessage(chatId, waitMsg.message_id);
-
-    /* ===== SINGLE IMAGE ===== */
-    if (single) {
-      return bot.sendPhoto(chatId, fs.createReadStream(paths[0]), {
-        caption: `🌸 **Image generated**\n🧠 Prompt: ${prompt}`,
-        reply_to_message_id: msg.message_id,
-      });
+    if (!imageURL) {
+      await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
+      return message.reply("❌ Failed to generate image. HF API did not return a valid image.", { reply_to_message_id: msg.message_id });
     }
 
-    /* ===== COMBINE 4 IMAGES ===== */
-    const imgs = await Promise.all(paths.map(p => loadImage(p)));
-    const w = imgs[0].width;
-    const h = imgs[0].height;
+    const imgRes = await axios.get(imageURL, { responseType: "stream" });
+    const cacheDir = path.join(__dirname, "tmp");
+    await fs.ensureDir(cacheDir);
+    const imgPath = path.join(cacheDir, `${session_hash}.png`);
+    await pipeline(imgRes.data, fs.createWriteStream(imgPath));
 
-    const canvas = createCanvas(w * 2, h * 2);
-    const ctx = canvas.getContext("2d");
-
-    ctx.drawImage(imgs[0], 0, 0, w, h);
-    ctx.drawImage(imgs[1], w, 0, w, h);
-    ctx.drawImage(imgs[2], 0, h, w, h);
-    ctx.drawImage(imgs[3], w, h, w, h);
-
-    const combined = path.join(TMP_DIR, `niji_grid_${Date.now()}.jpg`);
-    fs.writeFileSync(combined, canvas.toBuffer("image/jpeg"));
-
-    const sent = await bot.sendPhoto(chatId, fs.createReadStream(combined), {
-      caption:
-        `🧠 Prompt: ${prompt}\n` +
-        `①   ②\n③   ④\nReply with 1–4 to select your preferred image.`,
+    await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
+    await bot.sendPhoto(chatId, fs.createReadStream(imgPath), {
+      caption: `✅ Image generated!`,
       reply_to_message_id: msg.message_id,
     });
 
-    /* ===== SET REPLY HANDLER ===== */
-    input.setReply(sent.message_id, {
-      key: "nijiv5",
-      images: paths,
-      author: input.senderID,
-    });
-  } catch (e) {
-    console.error("NIJI ERROR:", e);
-    await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
-    message.reply("❌ Failed to generate image. Please try again later.", {
-      reply_to_message_id: msg.message_id,
-    });
+    await fs.remove(imgPath);
+  } catch (err) {
+    console.error("NIJIV5 ERROR:", err);
+    await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
+    message.reply("❌ Failed to generate image. Try again later.", { reply_to_message_id: msg.message_id });
   }
 }
 
-/* ===== REPLY HANDLER ===== */
-async function onReply({ bot, message, msg, chatId, input, repObj }) {
-  if (input.senderID !== repObj.author) return;
-
-  const index = parseInt(msg.text);
-  if (isNaN(index) || index < 1 || index > 4) {
-    return bot.sendMessage(chatId, "❌ Invalid choice. Use 1–4 only.", {
-      reply_to_message_id: msg.message_id,
-    });
-  }
-
-  await bot.sendPhoto(chatId, fs.createReadStream(repObj.images[index - 1]), {
-    reply_to_message_id: msg.message_id,
-  });
-}
-
-module.exports = {
-  nix,
-  onStart,
-  onReply,
-};
+module.exports = { nix, onStart };
