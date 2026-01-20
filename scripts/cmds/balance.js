@@ -40,7 +40,7 @@ const formatMoney = (amount) => {
   ];
   const scale = scales.find(s => amount >= s.value);
   if (scale) return `${scale.color}${(amount / scale.value).toFixed(1)}${scale.suffix}`;
-  return `${amount.toLocaleString()} 💰`;
+  return `${amount.toLocaleString()} $`;
 };
 
 /* ================= LOGIQUE AVATAR ================= */
