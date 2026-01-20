@@ -7,7 +7,7 @@ const axios = require("axios");
 const nix = {
   name: "top",
   version: "3.3",
-  author: "Christus (Nix Port)",
+  author: "Christus",
   cooldown: 10,
   role: 0,
   category: "classement",
