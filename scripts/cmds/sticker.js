@@ -58,7 +58,7 @@ function convertImageToSticker(inputPath, outputPath) {
 
 function convertVideoToSticker(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
-    const command = `ffmpeg -i "${inputPath}" -vf "scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=15" -vcodec libvpx-vp9 -crf 32 -b:v 0 -an -t 3 "${outputPath}" -y`;
+    const command = `ffmpeg -i "${inputPath}" -vf "scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=15" -vcodec libvpx-vp9 -crf 32 -b:v 0 -an -t 30 "${outputPath}" -y`;
     exec(command, (error, stdout, stderr) => {
       if (error) {
         console.error('Erreur conversion vidéo:', stderr);
@@ -87,7 +87,7 @@ async function onStart({ bot, msg, chatId, args, usages }) {
       `• Répondez à une photo ou vidéo avec /sticker\n` +
       `• Ou envoyez directement /sticker avec un média\n\n` +
       `✨ Formats supportés : JPG, PNG, MP4, WEBM\n` +
-      `⏱️ Vidéo max : 3 secondes`,
+      `⏱️ Vidéo max : 30 secondes`,
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -108,11 +108,10 @@ async function onStart({ bot, msg, chatId, args, usages }) {
     });
 
     if (targetMsg.video) {
-      // Vérifier la durée de la vidéo
       const duration = await getVideoDuration(inputPath);
-      if (duration > 3) {
+      if (duration > 30) {
         cleanup(inputPath);
-        return bot.sendMessage(chatId, '⏱️ La vidéo ne doit pas dépasser 3 secondes.', { reply_to_message_id: msg.message_id });
+        return bot.sendMessage(chatId, '⏱️ La vidéo ne doit pas dépasser 30 secondes.', { reply_to_message_id: msg.message_id });
       }
       await convertVideoToSticker(inputPath, outputPath);
     } else {
