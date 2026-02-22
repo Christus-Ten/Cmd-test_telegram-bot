@@ -157,24 +157,33 @@ async function onStart({ bot, msg, chatId, args }) {
 
     await bot.deleteMessage(chatId, loadingMsg.message_id);
 
+    // Téléchargement et envoi de l'avatar
     try {
       const cacheDir = path.join(__dirname, "cache");
       if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
       const imgPath = path.join(cacheDir, `ff_${uid}_${Date.now()}.jpg`);
-      const img = await axios.get(`https://profile.thug4ff.com/api/profile?uid=${uid}`, {
+      
+      // Utilisation de l'API correcte pour l'avatar
+      const img = await axios.get(`https://ffapii.vercel.app/api/profile?uid=${uid}`, {
         responseType: "arraybuffer",
         timeout: 8000
       });
+      
       fs.writeFileSync(imgPath, img.data);
       
+      // Envoi de la photo avec la légende
       await bot.sendPhoto(chatId, imgPath, {
         caption: msgText,
         reply_to_message_id: msg.message_id
       });
       
+      // Nettoyage
       fs.unlinkSync(imgPath);
+      
     } catch (imgErr) {
+      console.error("Erreur téléchargement avatar:", imgErr);
+      // Fallback: envoi du message sans photo
       await bot.sendMessage(chatId, msgText, {
         reply_to_message_id: msg.message_id
       });
