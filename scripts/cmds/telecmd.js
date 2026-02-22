@@ -7,7 +7,7 @@ const cheerio = require("cheerio");
 const nix = {
   name: "cmd",
   version: "1.18",
-  author: "NTKhang | Azadx69x | Adapté pour Nix",
+  author: "Christus",
   description: "Gestionnaire de commandes - load, unload, install, loadAll",
   aliases: ["cm", "command", "cmdmanager"],
   prefix: false,
