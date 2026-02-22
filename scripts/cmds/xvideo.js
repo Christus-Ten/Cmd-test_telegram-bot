@@ -8,14 +8,12 @@ if (!global.teamnix.replies) global.teamnix.replies = new Map();
 
 const nix = {
   name: "xvideos",
-  aliases: ["xv", "xvid"],
-  version: "1.0.0",
+  aliases: ["xv"],
+  version: "2.0",
   author: "Christus",
-  description: "Recherche vidéos via API XVideos",
-  prefix: true,
-  category: "media",
-  role: 0,
   cooldown: 5,
+  role: 0,
+  category: "media",
   guide: "{p}xvideos <recherche>"
 };
 
@@ -23,39 +21,19 @@ function buildList(videos, userName) {
   const time = moment().tz("Africa/Abidjan").format("DD/MM/YYYY HH:mm");
 
   const list = videos
-    .map((v, i) => {
-      return `📍 ${i + 1}. ${v.title || "Sans titre"}\n⏱️ ${v.duration || "?"}`;
-    })
+    .map((v, i) => `📍 ${i + 1}. ${v.title || "Sans titre"}\n⏱️ ${v.duration || "?"}`)
     .join("\n\n");
 
-  return (
-    `🔞 𝗫𝗩𝗶𝗱𝗲𝗼𝘀 𝗦𝗲𝗮𝗿𝗰𝗵\n━━━━━━━━━━━━━━\n\n` +
-    `👤 ${userName}\n` +
-    `📅 ${time}\n\n` +
-    `🎯 𝗦é𝗹𝗲𝗰𝘁𝗶𝗼𝗻𝗻𝗲𝘇 𝘂𝗻𝗲 𝘃𝗶𝗱é𝗼\n\n${list}\n\n` +
-    `━━━━━━━━━━━━━━\n` +
-    `✍️ Répondez avec un nombre (1-6)\n` +
-    `⏰ 30 secondes`
-  );
-}
+  return `🔞 XVideos Search
+━━━━━━━━━━━━━━
 
-async function downloadThumb(url, index) {
-  try {
-    const res = await axios({ url, responseType: "stream" });
-    const filePath = path.join(__dirname, `thumb_${Date.now()}_${index}.jpg`);
-    const writer = fs.createWriteStream(filePath);
+👤 ${userName}
+📅 ${time}
 
-    res.data.pipe(writer);
+${list}
 
-    await new Promise((resolve, reject) => {
-      writer.on("finish", resolve);
-      writer.on("error", reject);
-    });
-
-    return filePath;
-  } catch {
-    return null;
-  }
+━━━━━━━━━━━━━━
+✍️ Répondez avec un nombre (1-6)`;
 }
 
 async function onStart({ bot, msg, chatId, args, usages }) {
@@ -65,43 +43,23 @@ async function onStart({ bot, msg, chatId, args, usages }) {
 
   if (!query) return usages();
 
-  const searchMsg = await bot.sendMessage(
-    chatId,
-    "🔍 Recherche en cours...",
-    { reply_to_message_id: msg.message_id }
-  );
+  const loading = await bot.sendMessage(chatId, "🔍 Recherche...", {
+    reply_to_message_id: msg.message_id
+  });
 
   try {
-    const { data } = await axios.get(
+    const res = await axios.get(
       `https://azadx69x-all-apis-top.vercel.app/api/xvideossearch?query=${encodeURIComponent(query)}`
     );
 
-    const results = data?.data?.results?.slice(0, 6) || [];
+    const results = res.data?.data?.results?.slice(0, 6) || [];
+
+    await bot.deleteMessage(chatId, loading.message_id);
 
     if (!results.length) {
-      await bot.deleteMessage(chatId, searchMsg.message_id);
       return bot.sendMessage(chatId, "❌ Aucun résultat.", {
         reply_to_message_id: msg.message_id
       });
-    }
-
-    const thumbs = [];
-
-    for (let i = 0; i < results.length; i++) {
-      if (!results[i].thumbnail) continue;
-      const file = await downloadThumb(results[i].thumbnail, i);
-      if (file) thumbs.push(file);
-    }
-
-    await bot.deleteMessage(chatId, searchMsg.message_id);
-
-    if (thumbs.length) {
-      const mediaGroup = thumbs.map(file => ({
-        type: "photo",
-        media: file
-      }));
-
-      await bot.sendMediaGroup(chatId, mediaGroup);
     }
 
     const listMsg = await bot.sendMessage(
@@ -109,10 +67,6 @@ async function onStart({ bot, msg, chatId, args, usages }) {
       buildList(results, userName),
       { reply_to_message_id: msg.message_id }
     );
-
-    thumbs.forEach(f => {
-      try { fs.unlinkSync(f); } catch {}
-    });
 
     global.teamnix.replies.set(listMsg.message_id, {
       nix,
@@ -124,15 +78,11 @@ async function onStart({ bot, msg, chatId, args, usages }) {
     setTimeout(() => {
       if (global.teamnix.replies.has(listMsg.message_id)) {
         global.teamnix.replies.delete(listMsg.message_id);
-        bot.sendMessage(chatId, "⏰ Temps écoulé.", {
-          reply_to_message_id: listMsg.message_id
-        });
       }
     }, 30000);
 
-  } catch (err) {
-    await bot.deleteMessage(chatId, searchMsg.message_id);
-    console.error(err);
+  } catch (e) {
+    await bot.deleteMessage(chatId, loading.message_id);
     bot.sendMessage(chatId, "❌ Erreur API.", {
       reply_to_message_id: msg.message_id
     });
@@ -151,14 +101,49 @@ async function onReply({ bot, msg, chatId, userId, data, replyMsg }) {
   }
 
   const selected = data.results[choice - 1];
-
   global.teamnix.replies.delete(replyMsg.message_id);
 
-  bot.sendMessage(
-    chatId,
-    `✅ 𝗩𝗶𝗱é𝗼 𝘀é𝗹𝗲𝗰𝘁𝗶𝗼𝗻𝗻é𝗲\n\n🎬 ${selected.title}\n⏱️ ${selected.duration}\n🔗 ${selected.link}`,
-    { reply_to_message_id: msg.message_id }
-  );
+  let processingId;
+  let filePath;
+
+  try {
+    const loading = await bot.sendMessage(
+      chatId,
+      "📥 Téléchargement vidéo...",
+      { reply_to_message_id: msg.message_id }
+    );
+    processingId = loading.message_id;
+
+    // Ici on suppose que le lien est direct vidéo ou que Telegram peut le lire
+    const videoUrl =
+      selected.video ||
+      selected.download ||
+      selected.link;
+
+    const response = await axios.get(videoUrl, {
+      responseType: "arraybuffer"
+    });
+
+    const buffer = Buffer.from(response.data, "binary");
+
+    filePath = path.join(__dirname, `xv_${Date.now()}.mp4`);
+    fs.writeFileSync(filePath, buffer);
+
+    await bot.sendVideo(chatId, filePath, {
+      caption: `🎬 ${selected.title}\n⏱️ ${selected.duration}`,
+      reply_to_message_id: msg.message_id,
+      fileName: "xvideo.mp4"
+    });
+
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(chatId, "❌ Impossible d'envoyer la vidéo.", {
+      reply_to_message_id: msg.message_id
+    });
+  } finally {
+    if (processingId) bot.deleteMessage(chatId, processingId);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
 }
 
 module.exports = { onStart, onReply, nix };
