@@ -1,85 +1,260 @@
-const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
-const ytSearch = require("yt-search");
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const ytSearch = require('yt-search');
+const moment = require('moment-timezone');
 
 const nix = {
   name: "sing",
-  version: "1.0.0",
-  aliases: ["music", "song"],
-  description: "Search and download music from YouTube",
+  version: "2.0.0",
+  aliases: ["music", "song", "mp3", "audio"],
+  description: "Rechercher et télécharger des chansons depuis YouTube (MP3)",
   author: "Christus",
-  prefix: false,
-  category: "music",
-  type: "anyone",
+  prefix: true,
+  category: "media",
+  role: 0,
   cooldown: 5,
-  guide: "{p}sing <song name or YouTube URL>",
+  guide: "{p}sing <nom de la chanson>"
 };
 
-async function onStart({ bot, message, chatId, args }) {
-  if (!args.length) {
-    return message.reply("❌ Provide a song name or YouTube URL.");
+const CACHE_DIR = path.join(__dirname, 'cache');
+
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function formatSongList(query, videos, userName) {
+  const time = moment().tz("Africa/Abidjan").format("DD/MM/YYYY HH:mm");
+
+  const list = videos
+    .map((v, i) => {
+      const duration = formatDuration(v.seconds);
+      return `📍 ${i + 1}. ${v.title}\n   ⏱️ ${duration} | 👤 ${v.author.name}`;
+    })
+    .join("\n\n");
+
+  return `🎵 𝗥𝗲𝗰𝗵𝗲𝗿𝗰𝗵𝗲 𝗠𝘂𝘀𝗶𝗰𝗮𝗹𝗲\n━━━━━━━━━━━━━━\n\n` +
+    `👤 ${userName}\n` +
+    `📅 ${time}\n` +
+    `🔍 𝗥𝗲𝗰𝗵𝗲𝗿𝗰𝗵𝗲: "${query}"\n\n` +
+    `📋 𝗥é𝘀𝘂𝗹𝘁𝗮𝘁𝘀\n\n${list}\n\n` +
+    `━━━━━━━━━━━━━━\n` +
+    `✍️ Répondez avec un nombre (1-6) pour télécharger\n` +
+    `⏰ 30 secondes pour répondre`;
+}
+
+function formatSongInfo(data, video, userName) {
+  const fileSize = data.fileSize || formatBytes(data.size) || "Inconnu";
+  const quality = data.quality || "128kbps";
+  
+  return `✅ 𝗧é𝗹é𝗰𝗵𝗮𝗿𝗴𝗲𝗺𝗲𝗻𝘁 𝗿é𝘂𝘀𝘀𝗶 !\n━━━━━━━━━━━━━━\n\n` +
+    `🎶 𝗧𝗶𝘁𝗿𝗲: ${data.title || video.title}\n` +
+    `👤 𝗔𝗿𝘁𝗶𝘀𝘁𝗲: ${video.author.name}\n` +
+    `⏱️ 𝗗𝘂𝗿é𝗲: ${formatDuration(video.seconds)}\n` +
+    `📦 𝗧𝗮𝗶𝗹𝗹𝗲: ${fileSize}\n` +
+    `🎧 𝗤𝘂𝗮𝗹𝗶𝘁é: ${quality}\n\n` +
+    `👤 Téléchargé par: ${userName}`;
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return null;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+async function downloadThumbnail(url, index) {
+  try {
+    const res = await axios.get(url, { responseType: 'arraybuffer' });
+    const filePath = path.join(CACHE_DIR, `thumb_${index}_${Date.now()}.jpg`);
+    fs.writeFileSync(filePath, Buffer.from(res.data));
+    return filePath;
+  } catch (error) {
+    console.error("Erreur téléchargement miniature:", error);
+    return null;
+  }
+}
+
+async function onStart({ bot, message, msg, chatId, args, usages }) {
+  const userId = msg.from.id;
+  const userName = msg.from.first_name || msg.from.username || "Utilisateur";
+  
+  const query = args.join(" ").trim();
+
+  if (!query) {
+    return usages();
   }
 
-  const query = args.join(" ");
-
-  // Message temporaire
-  const waitMsg = await message.reply("🎵 Patience... je cherche le son 🔍");
+  const searchMsg = await bot.sendMessage(chatId, 
+    "🔍 Recherche de musique en cours...",
+    { reply_to_message_id: msg.message_id }
+  );
 
   try {
-    let videoURL;
+    const search = await ytSearch(query);
+    const videos = search.videos.slice(0, 6);
 
-    // Si c’est déjà une URL YouTube
-    if (query.startsWith("http")) {
-      videoURL = query;
-    } else {
-      // Recherche YouTube
-      const search = await ytSearch(query);
-      if (!search || !search.videos.length) throw new Error("No results found.");
-      videoURL = search.videos[0].url;
+    if (videos.length === 0) {
+      await bot.deleteMessage(chatId, searchMsg.message_id);
+      return bot.sendMessage(chatId, 
+        "❌ Aucun résultat trouvé sur YouTube.",
+        { reply_to_message_id: msg.message_id }
+      );
     }
 
-    // API externe
-    const apiURL = `http://65.109.80.126:20409/aryan/play?url=${encodeURIComponent(videoURL)}`;
-    const res = await axios.get(apiURL);
-    const data = res.data;
-
-    if (!data.status || !data.downloadUrl) {
-      throw new Error("API error: no download URL.");
-    }
-
-    const title = data.title.replace(/[\\/:"*?<>|]/g, "");
-    const fileName = `${title}.mp3`;
-    const filePath = path.join(__dirname, fileName);
-
-    // Téléchargement du MP3
-    const audioFile = await axios.get(data.downloadUrl, {
-      responseType: "arraybuffer",
-    });
-
-    fs.writeFileSync(filePath, audioFile.data);
-
-    // Envoi sur Telegram
-    await bot.sendAudio(
-      chatId,
-      filePath,
-      {
-        caption: `🎵 *MUSIC*\n━━━━━━━━━━━━━━━\n${title}`,
-        parse_mode: "Markdown"
+    const thumbPaths = [];
+    for (let i = 0; i < videos.length; i++) {
+      try {
+        const thumbPath = await downloadThumbnail(videos[i].thumbnail, i);
+        if (thumbPath) thumbPaths.push(thumbPath);
+      } catch (e) {
+        console.error(`Erreur miniature ${i}:`, e);
       }
+    }
+
+    await bot.deleteMessage(chatId, searchMsg.message_id);
+
+    let lastMsgId;
+    if (thumbPaths.length > 0) {
+      const mediaGroup = thumbPaths.map(thumb => ({
+        type: 'photo',
+        media: thumb
+      }));
+
+      const sentMsg = await bot.sendMediaGroup(chatId, mediaGroup, {
+        reply_to_message_id: msg.message_id
+      });
+      lastMsgId = Array.isArray(sentMsg) ? sentMsg[sentMsg.length - 1].message_id : sentMsg.message_id;
+    }
+
+    const listMsg = await bot.sendMessage(chatId, 
+      formatSongList(query, videos, userName),
+      { reply_to_message_id: msg.message_id }
     );
 
-    fs.unlinkSync(filePath); // Suppression fichier temporaire
-    await bot.deleteMessage(chatId, waitMsg.message_id);
+    thumbPaths.forEach(thumb => {
+      try { fs.unlinkSync(thumb); } catch (e) {}
+    });
 
-  } catch (err) {
-    console.error(err);
+    global.teamnix.replies.set(listMsg.message_id, {
+      nix,
+      type: "sing_reply",
+      authorId: userId,
+      videos: videos,
+      query: query
+    });
 
-    await bot.editMessageText(
-      `❌ Failed to download song: ${err.message}`,
-      { chat_id: chatId, message_id: waitMsg.message_id }
+    setTimeout(() => {
+      if (global.teamnix.replies.has(listMsg.message_id)) {
+        global.teamnix.replies.delete(listMsg.message_id);
+        bot.sendMessage(chatId, 
+          "⏰ Temps écoulé ! Veuillez relancer la commande.",
+          { reply_to_message_id: listMsg.message_id }
+        );
+      }
+    }, 30000);
+
+  } catch (error) {
+    await bot.deleteMessage(chatId, searchMsg.message_id);
+    console.error("Erreur recherche musique:", error);
+    return bot.sendMessage(chatId, 
+      "❌ Erreur lors de la recherche. Veuillez réessayer.",
+      { reply_to_message_id: msg.message_id }
     );
   }
 }
 
-module.exports = { nix, onStart };
+async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
+  if (data.type !== "sing_reply" || userId !== data.authorId) return;
+
+  const choice = parseInt(msg.text);
+  if (isNaN(choice) || choice < 1 || choice > data.videos.length) {
+    return bot.sendMessage(chatId, 
+      "❌ Sélection invalide. Choisissez un nombre entre 1 et 6.",
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+
+  const video = data.videos[choice - 1];
+  
+  global.teamnix.replies.delete(replyMsg.message_id);
+
+  const loadingMsg = await bot.sendMessage(chatId, 
+    `⏳ Téléchargement de "${video.title}"...\n⏱️ Durée: ${formatDuration(video.seconds)}`,
+    { reply_to_message_id: msg.message_id }
+  );
+
+  try {
+    const apiConfig = await axios.get(
+      "https://raw.githubusercontent.com/arychauhann/APIs/refs/heads/main/api.json"
+    );
+
+    const baseApi = apiConfig.data?.ary;
+    if (!baseApi) throw new Error("API non trouvée");
+
+    const apiUrl = `${baseApi}/api/ytmp3?url=${encodeURIComponent(video.url)}&format=mp3`;
+    const res = await axios.get(apiUrl, { timeout: 20000 });
+    const data = res.data;
+
+    if (!data?.success || !data?.directLink) {
+      await bot.deleteMessage(chatId, loadingMsg.message_id);
+      return bot.sendMessage(chatId, 
+        "❌ Échec de récupération du lien de téléchargement.",
+        { reply_to_message_id: msg.message_id }
+      );
+    }
+
+    const filename = `${data.videoId || Date.now()}.mp3`;
+    const filepath = path.join(CACHE_DIR, filename);
+
+    const dl = await axios.get(data.directLink, {
+      responseType: "stream",
+      timeout: 0,
+    });
+
+    const writer = fs.createWriteStream(filepath);
+    dl.data.pipe(writer);
+
+    writer.on("finish", async () => {
+      await bot.deleteMessage(chatId, loadingMsg.message_id);
+
+      const userName = msg.from.first_name || msg.from.username || "Utilisateur";
+      
+      await bot.sendAudio(chatId, filepath, {
+        caption: formatSongInfo(data, video, userName),
+        title: video.title,
+        performer: video.author.name,
+        duration: video.seconds,
+        reply_to_message_id: msg.message_id
+      });
+
+      try {
+        fs.unlinkSync(filepath);
+      } catch (e) {}
+    });
+
+    writer.on("error", async () => {
+      await bot.deleteMessage(chatId, loadingMsg.message_id);
+      bot.sendMessage(chatId, 
+        "❌ Erreur lors du téléchargement de l'audio.",
+        { reply_to_message_id: msg.message_id }
+      );
+    });
+
+  } catch (error) {
+    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    console.error("Erreur téléchargement:", error);
+    return bot.sendMessage(chatId, 
+      "❌ Erreur lors du téléchargement. Veuillez réessayer.",
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+}
+
+module.exports = { onStart, onReply, nix };
