@@ -6,7 +6,7 @@ const nix = {
   version: "4.0",
   aliases: ["bk", "banque", "eco"],
   description: "Système bancaire complet avec investissements, immobilier, jeux et plus.",
-  author: "Aryan Chauhan • Converti par Christus",
+  author: "Christus",
   prefix: true,
   category: "economy",
   role: 0,
