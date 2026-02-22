@@ -5,70 +5,76 @@ const path = require("path");
 module.exports = {
   nix: {
     name: "onlytik",
-    aliases: ["tt18", "ttnsfw"],
-    version: "1.0.0",
+    aliases: ["tiktok18", "ttnsfw"],
+    version: "1.1.0",
     author: "Christus",
     cooldown: 5,
     role: 0,
     category: "nsfw",
-    shortDescription: "TikTok NSFW video",
-    longDescription: "Send random TikTok NSFW video",
-    guide: "tiktok18"
+    guide: "tt18"
   },
 
   onStart: async function ({ bot, msg, chatId }) {
     let processingMessageId;
-    let downloadPath;
+    let filePath;
 
     try {
-      const processingMsg = await bot.sendMessage(
+      const loading = await bot.sendMessage(
         chatId,
         "📥 Fetching video...",
         { reply_to_message_id: msg.message_id }
       );
-      processingMessageId = processingMsg.message_id;
+      processingMessageId = loading.message_id;
 
-      const res = await axios.get("https://api.delirius.store/nsfw/tiktok");
+      const res = await axios.get(
+        "https://api.delirius.store/nsfw/tiktok",
+        { timeout: 20000 }
+      );
 
-      // Support plusieurs formats possibles
+      // 🔥 récupération intelligente du lien vidéo
       const videoUrl =
+        res.data?.data?.url ||
         res.data?.data ||
         res.data?.url ||
         res.data?.video ||
+        res.data?.result?.url ||
         res.data?.result;
 
-      if (!videoUrl) throw new Error("❌ Failed to get video.");
+      if (!videoUrl) throw new Error("No video URL");
 
+      // télécharger vidéo
       const response = await axios.get(videoUrl, {
-        responseType: "arraybuffer"
+        responseType: "arraybuffer",
+        timeout: 30000
       });
 
       const buffer = Buffer.from(response.data, "binary");
 
-      const filename = `tiktok_${Date.now()}.mp4`;
-      downloadPath = path.join(__dirname, filename);
+      filePath = path.join(__dirname, `tt18_${Date.now()}.mp4`);
+      fs.writeFileSync(filePath, buffer);
 
-      fs.writeFileSync(downloadPath, buffer);
-
-      await bot.sendVideo(chatId, downloadPath, {
-        caption: "🔥 TikTok Video",
+      await bot.sendVideo(chatId, filePath, {
+        caption: "🔥 TikTok 18+",
         reply_to_message_id: msg.message_id,
-        fileName: filename
+        fileName: "tiktok18.mp4"
       });
 
     } catch (err) {
-      console.error(err);
+      console.error("TT18 ERROR:", err.message);
+
       bot.sendMessage(
         chatId,
-        "❌ Error while fetching video.",
+        "❌ Impossible de récupérer la vidéo.",
         { reply_to_message_id: msg.message_id }
       );
+
     } finally {
       if (processingMessageId) {
         bot.deleteMessage(chatId, processingMessageId);
       }
-      if (downloadPath && fs.existsSync(downloadPath)) {
-        fs.unlinkSync(downloadPath);
+
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
       }
     }
   }
