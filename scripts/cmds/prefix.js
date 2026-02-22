@@ -55,7 +55,8 @@ const getLang = (key, ...args) => {
         myPrefix: "👋 Hey %1, tu cherches mon préfixe ?\n\n🌐 **Global** : `%2`\n💬 **Ce groupe** : `%3`\n\nJe suis **%4** à ton service 🫡",
         currentPrefix: "🔧 **Gestion du Préfixe**\n\n🌐 Global : `%1`\n💬 Ce groupe : `%2`\n\nPour changer :\n`%3prefix <nouveau>`\n`%3prefix reset`",
         cancelled: "❌ Opération annulée.",
-        invalidChoice: "❌ Choix invalide. Veuillez utiliser les boutons."
+        invalidChoice: "❌ Choix invalide. Veuillez utiliser les boutons.",
+        mentionResponse: "👋 %1, voici mon préfixe pour ce groupe : `%2`\n\nUtilise `/prefix` pour plus d'options !"
     };
     let text = lang[key] || key;
     args.forEach((arg, i) => {
@@ -223,10 +224,9 @@ async function onChat({ bot, msg, chatId, message }) {
         
         const globalPrefix = config.prefix || "!";
         const threadPrefix = threadData[chatId]?.prefix || globalPrefix;
-        const userName = message.from.first_name || "Utilisateur";
-        const botName = global.config?.botName || "Bot";
         
-        const response = getLang("myPrefix", userName, globalPrefix, threadPrefix, botName);
+        const mention = `[${message.from.first_name}](tg://user?id=${message.from.id})`;
+        const response = getLang("mentionResponse", mention, threadPrefix);
         
         return bot.sendMessage(chatId, response, {
             parse_mode: 'Markdown',
