@@ -7,28 +7,11 @@ const os = require('os');
 const tmpDir = path.join(os.tmpdir(), 'telegram_stickers');
 if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-const dbDir = path.join(process.cwd(), 'database');
-if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-const packsFile = path.join(dbDir, 'sticker_packs.json');
-
-function loadPacks() {
-  if (!fs.existsSync(packsFile)) {
-    const defaultData = { currentPack: 1, count: 0, packs: [] };
-    fs.writeFileSync(packsFile, JSON.stringify(defaultData, null, 2));
-    return defaultData;
-  }
-  return JSON.parse(fs.readFileSync(packsFile, 'utf8'));
-}
-
-function savePacks(data) {
-  fs.writeFileSync(packsFile, JSON.stringify(data, null, 2));
-}
-
 const nix = {
   name: 'sticker',
-  version: '1.1.0',
+  version: '1.0.0',
   aliases: ['s', 'stk', 'autocollant'],
-  description: 'Transforme une photo ou une vidéo en sticker et l’ajoute automatiquement à un pack (30 par pack)',
+  description: 'Transforme une photo ou une vidéo en sticker Telegram',
   author: 'Christus',
   prefix: true,
   category: 'media',
@@ -85,65 +68,6 @@ function convertVideoToSticker(inputPath, outputPath) {
   });
 }
 
-async function addToStickerPack(bot, filePath, isVideo, userId, userName) {
-  try {
-    const botInfo = await bot.getMe();
-    const botUsername = botInfo.username;
-    if (!botUsername) throw new Error('Le bot n\'a pas de username');
-
-    const isAnimated = isVideo;
-    const stickerType = isAnimated ? 'webm_sticker' : 'png_sticker';
-
-    const uploadResult = await bot.uploadStickerFile(userId, filePath);
-    const fileId = uploadResult.file_id;
-
-    const packs = loadPacks();
-    let currentPackIndex = packs.currentPack;
-    let packName = `creator_${currentPackIndex}_by_${botUsername}`.toLowerCase();
-    let packTitle = `Creator (@Christus225) ${currentPackIndex}`;
-
-    let packExists = false;
-    try {
-      await bot.getStickerSet(packName);
-      packExists = true;
-    } catch (e) {
-      if (e.response && e.response.statusCode === 404) {
-        packExists = false;
-      } else {
-        throw e;
-      }
-    }
-
-    if (packExists) {
-      await bot.addStickerToSet(userId, packName, fileId, {
-        [stickerType]: fileId,
-        emojis: '🤖'
-      });
-      packs.count = (packs.count || 0) + 1;
-      const stickerNumber = packs.count;
-      if (packs.count >= 30) {
-        packs.currentPack++;
-        packs.count = 0;
-      }
-      savePacks(packs);
-      return { packIndex: currentPackIndex, packTitle, stickerNumber };
-    } else {
-      await bot.createNewStickerSet(userId, packName, packTitle, fileId, {
-        [stickerType]: fileId,
-        emojis: '🤖',
-        contains_masks: false
-      });
-      packs.packs.push(packName);
-      packs.count = 1;
-      savePacks(packs);
-      return { packIndex: currentPackIndex, packTitle, stickerNumber: 1 };
-    }
-  } catch (error) {
-    console.error('Erreur lors de l\'ajout au pack:', error);
-    throw error;
-  }
-}
-
 async function onStart({ bot, msg, chatId, args, usages }) {
   const targetMsg = msg.reply_to_message || msg;
   const fileId = targetMsg.photo
@@ -177,6 +101,7 @@ async function onStart({ bot, msg, chatId, args, usages }) {
     const stream = await downloadTelegramFile(bot, fileId);
     const writer = fs.createWriteStream(inputPath);
     stream.pipe(writer);
+
     await new Promise((resolve, reject) => {
       writer.on('finish', resolve);
       writer.on('error', reject);
@@ -196,32 +121,6 @@ async function onStart({ bot, msg, chatId, args, usages }) {
     await bot.sendSticker(chatId, outputPath, {
       reply_to_message_id: msg.message_id
     });
-
-    try {
-      const { packIndex, packTitle, stickerNumber } = await addToStickerPack(
-        bot,
-        outputPath,
-        !!targetMsg.video,
-        msg.from.id,
-        msg.from.first_name || 'Utilisateur'
-      );
-      await bot.sendMessage(
-        chatId,
-        `📦 Sticker ajouté au pack *${packTitle}* (${stickerNumber}/30)`,
-        { parse_mode: 'Markdown', reply_to_message_id: msg.message_id }
-      );
-    } catch (packError) {
-      console.error('Erreur pack:', packError);
-      let packErrorMsg = '⚠️ Le sticker a été créé mais n\'a pas pu être ajouté au pack.';
-      if (packError.response && packError.response.body && packError.response.body.description) {
-        packErrorMsg += ` (${packError.response.body.description})`;
-      }
-      await bot.sendMessage(
-        chatId,
-        packErrorMsg,
-        { reply_to_message_id: msg.message_id }
-      );
-    }
 
     cleanup(inputPath);
     cleanup(outputPath);
