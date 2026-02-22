@@ -7,7 +7,6 @@ const os = require('os');
 const tmpDir = path.join(os.tmpdir(), 'telegram_stickers');
 if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-// Gestion des packs de stickers
 const dbDir = path.join(process.cwd(), 'database');
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 const packsFile = path.join(dbDir, 'sticker_packs.json');
@@ -86,73 +85,59 @@ function convertVideoToSticker(inputPath, outputPath) {
   });
 }
 
-// Fonction pour ajouter le sticker à un pack Telegram
 async function addToStickerPack(bot, filePath, isVideo, userId, userName) {
   try {
-    // Récupérer le username du bot (nécessaire pour le nom du pack)
     const botInfo = await bot.getMe();
-    const botUsername = botInfo.username; // ex: "Christus225_bot"
+    const botUsername = botInfo.username;
     if (!botUsername) throw new Error('Le bot n\'a pas de username');
 
-    // Déterminer le type de sticker
-    const isAnimated = isVideo; // vidéo => sticker animé
+    const isAnimated = isVideo;
     const stickerType = isAnimated ? 'webm_sticker' : 'png_sticker';
 
-    // Uploader le fichier pour obtenir un file_id
-    const uploadResult = await bot.uploadStickerFile(userId, filePath, {
-      png_sticker: !isAnimated,
-      webm_sticker: isAnimated
-    });
+    const uploadResult = await bot.uploadStickerFile(userId, filePath);
     const fileId = uploadResult.file_id;
 
-    // Charger l'état des packs
     const packs = loadPacks();
-    const currentPackIndex = packs.currentPack;
-    const packName = `creator_${currentPackIndex}_by_${botUsername}`.toLowerCase(); // nom technique
-    const packTitle = `Creator (@Christus225) ${currentPackIndex}`;
+    let currentPackIndex = packs.currentPack;
+    let packName = `creator_${currentPackIndex}_by_${botUsername}`.toLowerCase();
+    let packTitle = `Creator (@Christus225) ${currentPackIndex}`;
 
-    // Fonction pour ajouter le sticker au pack
-    async function addStickerToExistingPack() {
-      await bot.addStickerToSet(userId, packName, fileId, {
-        [stickerType]: fileId,
-        emojis: '🤖' // emoji par défaut, on peut le rendre configurable plus tard
-      });
-    }
-
-    // Vérifier si le pack existe déjà
     let packExists = false;
     try {
-      // On tente de récupérer le pack (pas de méthode directe, on peut essayer d'ajouter et capturer l'erreur)
-      // Une meilleure approche : on garde une liste des packs créés dans notre fichier
-      packExists = packs.packs.includes(packName);
+      await bot.getStickerSet(packName);
+      packExists = true;
     } catch (e) {
-      packExists = false;
+      if (e.response && e.response.statusCode === 404) {
+        packExists = false;
+      } else {
+        throw e;
+      }
     }
 
     if (packExists) {
-      // Ajouter au pack existant
-      await addStickerToExistingPack();
+      await bot.addStickerToSet(userId, packName, fileId, {
+        [stickerType]: fileId,
+        emojis: '🤖'
+      });
+      packs.count = (packs.count || 0) + 1;
+      const stickerNumber = packs.count;
+      if (packs.count >= 30) {
+        packs.currentPack++;
+        packs.count = 0;
+      }
+      savePacks(packs);
+      return { packIndex: currentPackIndex, packTitle, stickerNumber };
     } else {
-      // Créer un nouveau pack avec ce premier sticker
       await bot.createNewStickerSet(userId, packName, packTitle, fileId, {
         [stickerType]: fileId,
         emojis: '🤖',
         contains_masks: false
       });
-      // Enregistrer le pack dans notre liste
       packs.packs.push(packName);
+      packs.count = 1;
+      savePacks(packs);
+      return { packIndex: currentPackIndex, packTitle, stickerNumber: 1 };
     }
-
-    // Mettre à jour le compteur
-    packs.count = (packs.count || 0) + 1;
-    if (packs.count >= 30) {
-      // Passer au pack suivant
-      packs.currentPack++;
-      packs.count = 0;
-    }
-    savePacks(packs);
-
-    return { packIndex: currentPackIndex, packTitle, stickerNumber: packs.count || 30 };
   } catch (error) {
     console.error('Erreur lors de l\'ajout au pack:', error);
     throw error;
@@ -197,7 +182,6 @@ async function onStart({ bot, msg, chatId, args, usages }) {
       writer.on('error', reject);
     });
 
-    // Conversion
     if (targetMsg.video) {
       const duration = await getVideoDuration(inputPath);
       if (duration > 30) {
@@ -209,13 +193,10 @@ async function onStart({ bot, msg, chatId, args, usages }) {
       await convertImageToSticker(inputPath, outputPath);
     }
 
-    // Envoyer le sticker à l'utilisateur (comme avant)
     await bot.sendSticker(chatId, outputPath, {
       reply_to_message_id: msg.message_id
     });
 
-    // Ajouter au pack (en arrière-plan, on attend pas pour ne pas ralentir)
-    // Mais on veut informer l'utilisateur, donc on le fait de manière asynchrone avec await
     try {
       const { packIndex, packTitle, stickerNumber } = await addToStickerPack(
         bot,
@@ -224,7 +205,6 @@ async function onStart({ bot, msg, chatId, args, usages }) {
         msg.from.id,
         msg.from.first_name || 'Utilisateur'
       );
-      // Envoyer un message de confirmation
       await bot.sendMessage(
         chatId,
         `📦 Sticker ajouté au pack *${packTitle}* (${stickerNumber}/30)`,
@@ -232,15 +212,17 @@ async function onStart({ bot, msg, chatId, args, usages }) {
       );
     } catch (packError) {
       console.error('Erreur pack:', packError);
-      // On ne bloque pas l'utilisateur, on signale juste
+      let packErrorMsg = '⚠️ Le sticker a été créé mais n\'a pas pu être ajouté au pack.';
+      if (packError.response && packError.response.body && packError.response.body.description) {
+        packErrorMsg += ` (${packError.response.body.description})`;
+      }
       await bot.sendMessage(
         chatId,
-        `⚠️ Le sticker a été créé mais n'a pas pu être ajouté au pack.`,
+        packErrorMsg,
         { reply_to_message_id: msg.message_id }
       );
     }
 
-    // Nettoyage
     cleanup(inputPath);
     cleanup(outputPath);
 
