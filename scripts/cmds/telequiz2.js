@@ -64,11 +64,11 @@ async function getAvailableCategories() {
 // ----------------------------------------------------------
 
 const nix = {
-  name: "quiz",
+  name: "quiz2",
   version: "3.0",
-  aliases: ["q"],
+  aliases: ["q2"],
   description: "Jeu de quiz avancé avec fonctionnalités sociales, multijoueur, réalisations et analyses complètes",
-  author: "Christus x Aesther (converted)",
+  author: "Christus",
   prefix: true,
   category: "game",
   role: 0,
