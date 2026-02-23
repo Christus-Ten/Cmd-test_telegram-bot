@@ -20,15 +20,13 @@ const saveDatabase = (dbName, data) => {
   fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
 };
 
-const OWNER_IDS = [123456789];
-
 const nix = {
   name: "join",
   version: "3.1",
   aliases: ["rejoindre"],
-  description: "Rejoindre un groupe où le bot est présent (propriétaires uniquement)",
+  description: "Rejoindre un groupe où le bot est présent",
   author: "Christus",
-  prefix: false,
+  prefix: true,
   category: "owner",
   role: 2,
   cooldown: 5,
@@ -36,12 +34,6 @@ const nix = {
 };
 
 async function onStart({ bot, message, msg, chatId, args, usages }) {
-  if (!OWNER_IDS.includes(msg.from.id)) {
-    return bot.sendMessage(chatId, "⛔ Cette commande est réservée aux propriétaires du bot.", {
-      reply_to_message_id: msg.message_id
-    });
-  }
-
   try {
     const groups = getDatabase('groups');
     if (!groups || groups.length === 0) {
