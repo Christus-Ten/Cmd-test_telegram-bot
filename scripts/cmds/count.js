@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// Database helpers (copied from telequiz.js)
 const getDatabasePath = (dbName) => {
   const dbPath = path.join(process.cwd(), 'database', `${dbName}.json`);
   const dbDir = path.join(process.cwd(), 'database');
@@ -33,7 +32,7 @@ const nix = {
   version: "1.0.0",
   aliases: ["msgcount", "totalmsg"],
   description: "Count messages and ranks of users in the chat",
-  author: "Christus",
+  author: "Samir Thakuri (converted)",
   prefix: true,
   category: "utility",
   role: 0,
@@ -43,30 +42,45 @@ const nix = {
 
 async function onStart({ bot, msg, chatId, args }) {
   try {
-    const threads = getDatabase('threads');
-    const thread = threads[chatId];
-
-    if (!thread || !thread.users || Object.keys(thread.users).length === 0) {
-      return bot.sendMessage(chatId, 'No message data available for this group.', {
-        reply_to_message_id: msg.message_id
-      });
+    let threads = getDatabase('threads');
+    
+    // Initialize thread data if it doesn't exist
+    if (!threads[chatId]) {
+      threads[chatId] = {
+        users: {}
+      };
+      saveDatabase('threads', threads);
     }
 
-    const usersData = thread.users; // { userId: totalMsg, ... }
+    const thread = threads[chatId];
+    const usersData = thread.users || {};
     const usersArray = Object.entries(usersData).map(([userId, totalMsg]) => ({
       userId,
-      totalMsg: parseInt(totalMsg)
+      totalMsg: parseInt(totalMsg) || 0
     }));
 
     usersArray.sort((a, b) => b.totalMsg - a.totalMsg);
 
+    // Helper to get user name
+    const getUserName = (userId) => {
+      const usersDb = getDatabase('users');
+      const userInfo = usersDb[userId];
+      if (userInfo) {
+        return `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim() || userId;
+      }
+      // Fallback: try to get from msg if it's the current user
+      if (userId === msg.from.id.toString()) {
+        return msg.from.first_name || msg.from.username || userId;
+      }
+      return userId;
+    };
+
     if (args.length === 0) {
-      // Count messages for the user who executed the command
       const userId = msg.from.id.toString();
       const userIndex = usersArray.findIndex(u => u.userId === userId);
 
-      if (userIndex === -1) {
-        return bot.sendMessage(chatId, 'You are not in the message data.', {
+      if (userIndex === -1 || usersArray[userIndex].totalMsg === 0) {
+        return bot.sendMessage(chatId, 'You have no messages recorded yet.', {
           reply_to_message_id: msg.message_id
         });
       }
@@ -80,18 +94,20 @@ async function onStart({ bot, msg, chatId, args }) {
     }
 
     if (args[0].toLowerCase() === 'all') {
-      // Count messages for all users (limit to first 20 to avoid long messages)
+      if (usersArray.length === 0) {
+        return bot.sendMessage(chatId, 'No message data available for this group yet.', {
+          reply_to_message_id: msg.message_id
+        });
+      }
+
       const limit = 20;
       const displayUsers = usersArray.slice(0, limit);
       let message = '📊 Message ranks:\n';
       for (let i = 0; i < displayUsers.length; i++) {
         const user = displayUsers[i];
         const rank = getOrdinalSuffix(i + 1);
-        // Try to get user name from users database
-        const usersDb = getDatabase('users');
-        const userInfo = usersDb[user.userId];
-        const name = userInfo ? `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim() : user.userId;
-        message += `${rank}. ${name || user.userId} - ${user.totalMsg}\n`;
+        const name = getUserName(user.userId);
+        message += `${rank}. ${name} - ${user.totalMsg}\n`;
       }
       if (usersArray.length > limit) {
         message += `... and ${usersArray.length - limit} more.`;
@@ -111,17 +127,9 @@ async function onStart({ bot, msg, chatId, args }) {
       });
     }
 
-    const usersDb = getDatabase('users');
-    const userInfo = usersDb[userId];
-    if (!userInfo) {
-      return bot.sendMessage(chatId, `User with ID ${userId} does not exist in the database.`, {
-        reply_to_message_id: msg.message_id
-      });
-    }
-
     const totalMsg = usersArray[userIndex].totalMsg;
     const position = getOrdinalSuffix(userIndex + 1);
-    const fullName = `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim();
+    const fullName = getUserName(userId);
 
     return bot.sendMessage(chatId, `${fullName} has ranked ${position} position with a total of ${totalMsg} messages.`, {
       reply_to_message_id: msg.message_id
