@@ -1,23 +1,27 @@
-const acrcloud = require('acrcloud');
-const fs = require('fs').promises;
+let acrcloud;
+try {
+    acrcloud = require('acrcloud');
+} catch (e) {
+    console.warn("⚠️ Module 'acrcloud' non installé. La commande shazam ne fonctionnera pas.");
+}
+
+const fs = require('fs');
+const fsPromises = fs.promises;
 const path = require('path');
 
-const acr = new acrcloud({
-    host: 'identify-eu-west-1.acrcloud.com',
-    access_key: '6ab51323d0971429efbc32743c3b6e01',
-    access_secret: 'iFbOFUI9rVrQPf7WN5BzcpPnQoCTPJ3JdMkAgrU8',
-});
-
 const cacheFolder = path.join(__dirname, 'cache');
+if (!fs.existsSync(cacheFolder)) {
+    fs.mkdirSync(cacheFolder, { recursive: true });
+}
 
-// Créer le dossier cache s'il n'existe pas
-(async () => {
-    try {
-        await fs.mkdir(cacheFolder, { recursive: true });
-    } catch (err) {
-        console.error('Error creating cache folder:', err);
-    }
-})();
+let acr;
+if (acrcloud) {
+    acr = new acrcloud({
+        host: 'identify-eu-west-1.acrcloud.com',
+        access_key: '6ab51323d0971429efbc32743c3b6e01',
+        access_secret: 'iFbOFUI9rVrQPf7WN5BzcpPnQoCTPJ3JdMkAgrU8',
+    });
+}
 
 const nix = {
     name: "shazam",
@@ -33,7 +37,13 @@ const nix = {
 };
 
 async function onStart({ bot, message, msg, chatId, args, usages }) {
-    // Vérifier qu'on répond à un message
+    if (!acrcloud || !acr) {
+        return bot.sendMessage(chatId,
+            "❌ Module 'acrcloud' manquant. Veuillez installer le module avec :\n`npm install acrcloud`",
+            { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+        );
+    }
+
     if (!msg.reply_to_message) {
         return bot.sendMessage(chatId, 
             "╭────❒ 🎧 Usage 🎧 ❒────\n" +
@@ -44,18 +54,13 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
     }
 
     const replied = msg.reply_to_message;
-    // Vérifier le type de média
     let fileId = null;
-    let mediaType = null;
     if (replied.audio) {
         fileId = replied.audio.file_id;
-        mediaType = 'audio';
     } else if (replied.voice) {
         fileId = replied.voice.file_id;
-        mediaType = 'voice';
     } else if (replied.video) {
         fileId = replied.video.file_id;
-        mediaType = 'video';
     } else {
         return bot.sendMessage(chatId,
             "❌ Veuillez répondre à un message audio (musique), vocal ou vidéo.",
@@ -63,7 +68,6 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
         );
     }
 
-    // Envoyer un message de traitement
     const processingMsg = await bot.sendMessage(chatId,
         "╭────❒ 🎶 Identification en cours... 🎶 ❒────\n" +
         "├⬡ Analyse du fichier...\n" +
@@ -73,19 +77,10 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
     );
 
     try {
-        // Télécharger le fichier dans le dossier cache
         const filePath = await bot.downloadFile(fileId, cacheFolder);
-        
-        // Lire le fichier
-        const fileBuffer = await fs.readFile(filePath);
-
-        // Identification avec ACRCloud
+        const fileBuffer = await fsPromises.readFile(filePath);
         const results = await acr.identify(fileBuffer);
-
-        // Supprimer le fichier temporaire
-        await fs.unlink(filePath).catch(() => {});
-
-        // Supprimer le message de traitement
+        await fsPromises.unlink(filePath).catch(() => {});
         await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
 
         if (results && results.status && results.status.code === 0 && 
@@ -115,7 +110,6 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
         }
     } catch (error) {
         console.error('Shazam error:', error);
-        // Supprimer le message de traitement si possible
         await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
         await bot.sendMessage(chatId,
             "❌ Erreur lors de l'identification. Veuillez réessayer plus tard.",
@@ -125,7 +119,7 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
 }
 
 async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
-    // Non utilisé
+    // Not used
 }
 
 module.exports = { onStart, onReply, nix };
