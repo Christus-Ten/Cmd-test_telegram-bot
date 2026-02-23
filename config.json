@@ -32,7 +32,7 @@
     "enabled": true
   },
   "mongoDB": {
-    "enabled": false,
+    "enabled": true,
     "url": "mongodb+srv://Christus:voldigo225@cluster0.gykt2by.mongodb.net/?appName=Cluster0",
     "dbName": "mongodb"
   },
