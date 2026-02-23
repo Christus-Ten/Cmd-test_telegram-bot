@@ -13,7 +13,7 @@ const nix = {
   version: "3.4.0",
   aliases: ["download", "dl"],
   description: "Télécharge des médias depuis YouTube, Spotify, Imgur, Pinterest, etc.",
-  author: "Christus (converted)",
+  author: "Christus",
   prefix: true,
   category: "downloader",
   role: 0,
@@ -88,10 +88,8 @@ async function onStart({ bot, msg, chatId, args }) {
       else throw new Error("Aucun média téléchargeable trouvé");
     }
 
-    // Supprimer le message de traitement
     await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
 
-    // Télécharger et envoyer chaque fichier
     for (const item of downloads) {
       const filePath = path.join(CACHE_DIR, `autodl_${Date.now()}_${Math.random().toString(36).slice(2)}.${item.ext}`);
       try {
@@ -116,13 +114,10 @@ async function onStart({ bot, msg, chatId, args }) {
             reply_to_message_id: msg.message_id
           });
         }
-
       } finally {
-        // Nettoyer le fichier temporaire
         await fsPromises.unlink(filePath).catch(() => {});
       }
     }
-
   } catch (error) {
     console.error("AutoDL Error:", error);
     await bot.deleteMessage(chatId, processingMsg.message_id).catch(() => {});
@@ -133,7 +128,6 @@ async function onStart({ bot, msg, chatId, args }) {
 }
 
 async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
-  // Not used
 }
 
 module.exports = { onStart, onReply, nix };
