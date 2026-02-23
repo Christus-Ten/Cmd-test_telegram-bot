@@ -1,6 +1,5 @@
 const axios = require('axios');
 
-// Fonctions de police (gardées identiques)
 function toCmdFont(text = "") {
   const map = {
     A:"𝖠",B:"𝖡",C:"𝖢",D:"𝖣",E:"𝖤",F:"𝖥",G:"𝖦",H:"𝖧",I:"𝖨",J:"𝖩",
@@ -33,7 +32,7 @@ const nix = {
   aliases: ["aide", "menu"],
   description: "Affiche la liste des commandes ou les détails d'une commande spécifique",
   author: "Christus",
-  prefix: false,
+  prefix: true,
   category: "info",
   role: 0,
   cooldown: 2,
@@ -44,7 +43,6 @@ async function onStart({ bot, msg, chatId, args }) {
   const userId = msg.from.id;
   const userName = msg.from.first_name || "Utilisateur";
 
-  // Récupération de l'avatar de l'utilisateur (optionnel)
   let avatarFileId = null;
   try {
     const photos = await bot.getUserProfilePhotos(userId, 0, 1);
@@ -55,17 +53,15 @@ async function onStart({ bot, msg, chatId, args }) {
     console.error("Erreur récupération avatar:", err);
   }
 
-  // Vérifier que les commandes sont disponibles
   if (!global.teamnix || !global.teamnix.cmds) {
     return bot.sendMessage(chatId, "❌ Erreur : système de commandes non initialisé.", {
       reply_to_message_id: msg.message_id
     });
   }
 
-  const commands = global.teamnix.cmds; // Map
+  const commands = global.teamnix.cmds;
   const prefix = global.teamnix?.config?.prefix || "/";
 
-  // --- Fonction utilitaire pour trouver une commande par nom ou alias ---
   const findCommand = (query) => {
     query = query.toLowerCase();
     for (const cmd of commands.values()) {
@@ -75,7 +71,6 @@ async function onStart({ bot, msg, chatId, args }) {
     return null;
   };
 
-  // --- 1. Mode -AI ---
   if (args[0] && args[0].toLowerCase() === "-ai") {
     const cmdName = args[1] ? args[1].toLowerCase() : null;
     const questionRaw = args.slice(2).join(" ");
@@ -148,7 +143,6 @@ Réponds clairement dans la langue de l'utilisateur sans utiliser de caractères
     return;
   }
 
-  // --- 2. Détail d'une commande spécifique ---
   if (args[0]) {
     const query = args[0].toLowerCase();
     const command = findCommand(query);
@@ -184,7 +178,6 @@ Réponds clairement dans la langue de l'utilisateur sans utiliser de caractères
       : bot.sendMessage(chatId, card, { reply_to_message_id: msg.message_id });
   }
 
-  // --- 3. Menu général (aucun argument) ---
   const categorized = {};
 
   for (const cmd of commands.values()) {
@@ -219,7 +212,6 @@ Réponds clairement dans la langue de l'utilisateur sans utiliser de caractères
 }
 
 async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
-  // Non utilisé
 }
 
 module.exports = { onStart, onReply, nix };
