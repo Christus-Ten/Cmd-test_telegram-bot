@@ -52,7 +52,7 @@ const getLang = (key, ...args) => {
         confirmThisThread: "🔄 Confirmez le changement de préfixe du groupe en : %1",
         successGlobal: "✅ Préfixe global changé en : %1",
         successThisThread: "✅ Préfixe du groupe changé en : %1",
-        currentPrefix: "🔧 **Gestion du Préfixe**\n\n🌐 Global : `%1`\n💬 Ce groupe : `%2`\n\nPour changer :\n`%3prefix <nouveau>`\n`%3prefix reset`",
+        currentPrefix: "👋 %1\n\n🔧 **Gestion du Préfixe**\n\n🌐 Global : `%2`\n💬 Ce groupe : `%3`\n\nPour changer :\n`%4prefix <nouveau>`\n`%4prefix reset`",
         mentionResponse: "👋 %1, voici mon préfixe pour ce groupe : `%2`\n\nUtilise `/prefix` pour plus d'options !"
     };
     let text = lang[key] || key;
@@ -69,8 +69,10 @@ async function onStart({ bot, msg, chatId, args, role }) {
     const globalPrefix = config.prefix || "!";
     const threadPrefix = threadData[chatId]?.prefix || globalPrefix;
     
+    const mention = `[${msg.from.first_name}](tg://user?id=${msg.from.id})`;
+    
     if (args.length === 0) {
-        const response = getLang("currentPrefix", globalPrefix, threadPrefix, globalPrefix);
+        const response = getLang("currentPrefix", mention, globalPrefix, threadPrefix, globalPrefix);
         return bot.sendMessage(chatId, response, { 
             parse_mode: 'Markdown',
             reply_to_message_id: msg.message_id 
