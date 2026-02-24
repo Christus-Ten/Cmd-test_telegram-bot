@@ -2470,7 +2470,7 @@ ${fonts.bold("Score History:")}
   // ==================== FONCTION PRINCIPALE onStart ====================
   onStart: async function ({ bot, message, msg, chatId, args }) {
     const userId = msg.from.id.toString();
-    const fonts = require('../../func/font.js'); // à adapter selon le chemin
+    const fonts = require('../../func/fonts.js'); // à adapter selon le chemin
 
     // Charger les données
     let balances = getDatabase('balances');
