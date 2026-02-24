@@ -7,7 +7,7 @@ const nix = {
   version: "4.2",
   aliases: ["nstorm", "naruto"],
   description: "Jeu de combat Naruto avec système de chakra avancé",
-  author: "Delfa •|• ꗇ︱Blẳȼk 义 (adapté Nix)",
+  author: "Christus",
   prefix: true,
   category: "game",
   role: 0,
