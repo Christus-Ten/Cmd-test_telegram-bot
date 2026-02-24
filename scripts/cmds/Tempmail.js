@@ -4,9 +4,9 @@ const nix = {
   name: "tempmail",
   version: "1.0.0",
   aliases: ["tmpmail", "generatemail", "mail"],
-  description: "Génère une adresse email temporaire avec mot de passe et token",
+  description: "Génère une adresse email temporaire avec mot de passe",
   author: "Christus",
-  prefix: true,
+  prefix: false,
   category: "utilities",
   role: 0,
   cooldown: 5,
@@ -32,13 +32,11 @@ async function onStart({ bot, msg, chatId, args }) {
 
     const data = res.data;
 
-    if (data.email && data.password && data.token) {
+    if (data.email && data.password) {
       const replyMsg = 
-        `📧 **Email temporaire généré**\n\n` +
-        `**Email :** \`${data.email}\`\n` +
-        `**Mot de passe :** \`${data.password}\`\n` +
-        `**Token :** \`${data.token}\`\n` +
-        `**ID :** \`${data.id}\`\n\n` +
+        `📧 Email temporaire généré\n\n` +
+        `Email : \`${data.email}\`\n` +
+        `Mot de passe : \`${data.password}\`\n\n` +
         `Utilisez ces identifiants pour recevoir des emails sur cette adresse.`;
 
       await bot.sendMessage(chatId, replyMsg, { reply_to_message_id: msg.message_id });
