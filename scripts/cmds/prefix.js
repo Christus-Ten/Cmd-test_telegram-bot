@@ -46,16 +46,13 @@ const saveConfig = (config) => {
 
 const getLang = (key, ...args) => {
     const lang = {
-        reset: "✅ Préfixe réinitialisé : %1",
+        reset: "✅ Préfixe réinitialisé au défaut : %1",
         onlyAdmin: "❌ Seul un admin bot peut changer le préfixe global",
         confirmGlobal: "🔄 Confirmez le changement de préfixe global en : %1",
         confirmThisThread: "🔄 Confirmez le changement de préfixe du groupe en : %1",
         successGlobal: "✅ Préfixe global changé en : %1",
         successThisThread: "✅ Préfixe du groupe changé en : %1",
-        myPrefix: "👋 Hey %1, tu cherches mon préfixe ?\n\n🌐 **Global** : `%2`\n💬 **Ce groupe** : `%3`\n\nJe suis **%4** à ton service 🫡",
         currentPrefix: "🔧 **Gestion du Préfixe**\n\n🌐 Global : `%1`\n💬 Ce groupe : `%2`\n\nPour changer :\n`%3prefix <nouveau>`\n`%3prefix reset`",
-        cancelled: "❌ Opération annulée.",
-        invalidChoice: "❌ Choix invalide. Veuillez utiliser les boutons.",
         mentionResponse: "👋 %1, voici mon préfixe pour ce groupe : `%2`\n\nUtilise `/prefix` pour plus d'options !"
     };
     let text = lang[key] || key;
