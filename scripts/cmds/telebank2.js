@@ -174,9 +174,9 @@ function calculateLuxuryValue(bank) {
 
 // ==================== MÉTADONNÉES DE LA COMMANDE ====================
 const nix = {
-  name: "bank",
+  name: "bank2",
   version: "4.0",
-  aliases: ["b", "banque"],
+  aliases: ["b2", "banque2"],
   description: "Système bancaire complet avec investissements, jeux et plus",
   author: "Christus",
   prefix: true,
