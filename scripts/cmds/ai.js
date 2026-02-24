@@ -3,29 +3,11 @@ const fs = require("fs-extra");
 const path = require("path");
 const moment = require("moment-timezone");
 const { v4: uuidv4 } = require("uuid");
-
-/* ================= CONFIG ================= */
+const fonts = require('../../func/fonts.js'); // Import de la police sans-serif
 
 const API_ENDPOINT = "https://shizuai.vercel.app/chat";
 const CLEAR_ENDPOINT = "https://shizuai.vercel.app/chat/clear";
 const TMP_DIR = path.join(__dirname, "cache");
-
-/* ================= NIX META ================= */
-
-const nix = {
-  name: "ai",
-  version: "3.0.1",
-  aliases: ["shizu"],
-  description: "Advanced AI (text, image, music, video, lyrics)",
-  author: "Aryan Chauchan • fixed by Christus",
-  prefix: true,
-  category: "ai",
-  type: "anyone",
-  cooldown: 3,
-  guide: "{p}ai <message | image>\n{p}ai reset",
-};
-
-/* ================= UTILS ================= */
 
 async function download(url, ext) {
   await fs.ensureDir(TMP_DIR);
@@ -43,50 +25,71 @@ function normalizeText(text) {
     .replace(/A\.?\s*Chauchan/gi, "Christus");
 }
 
-/* ================= COMMAND ================= */
+const nix = {
+  name: "ai",
+  version: "3.0.1",
+  aliases: ["shizu"],
+  description: "Advanced AI (text, image, music, video, lyrics)",
+  author: "Christus",
+  prefix: true,
+  category: "ai",
+  type: "anyone",
+  cooldown: 3,
+  guide: "{p}ai <message | image>\n{p}ai reset",
+};
 
-async function onStart({ bot, message, chatId, args, event }) {
+async function onStart({ bot, msg, chatId, args }) {
   const input = args.join(" ").trim();
-  const userId = event?.senderID || chatId;
+  const userId = msg.from.id;
 
-  if (!input && !event?.attachments?.length && !event?.messageReply?.attachments?.length) {
-    return message.reply("💬 Please provide a message or an image.");
-  }
-
-  /* ===== RESET ===== */
-
+  // Reset conversation
   if (["reset", "clear"].includes(input.toLowerCase())) {
     try {
       await axios.delete(`${CLEAR_ENDPOINT}/${encodeURIComponent(userId)}`);
-      return message.reply("♻️ Conversation reset successfully.");
+      return bot.sendMessage(chatId, "♻️ Conversation reset successfully.", {
+        reply_to_message_id: msg.message_id,
+      });
     } catch {
-      return message.reply("❌ Failed to reset conversation.");
+      return bot.sendMessage(chatId, "❌ Failed to reset conversation.", {
+        reply_to_message_id: msg.message_id,
+      });
     }
   }
 
-  const timestamp = moment()
-    .tz("Asia/Manila")
-    .format("MMMM D, YYYY h:mm A");
-
-  const waitMsg = await message.reply(
-    `🤖 AI is thinking...\n━━━━━━━━━━━━━━━\n📅 ${timestamp}`
-  );
-
-  /* ===== IMAGE DETECTION (SAFE) ===== */
-
+  // Check for image in current message or replied message
   let imageUrl = null;
+  const getPhotoUrl = async (photo) => {
+    if (!photo || !photo.length) return null;
+    const fileId = photo[photo.length - 1].file_id; // largest size
+    try {
+      const fileLink = await bot.getFileLink(fileId);
+      return fileLink;
+    } catch (e) {
+      console.error("Failed to get photo URL:", e);
+      return null;
+    }
+  };
 
-  // Image envoyée directement
-  if (event?.attachments?.length) {
-    const img = event.attachments.find(a => a.type === "photo");
-    if (img?.url) imageUrl = img.url;
+  if (msg.photo && msg.photo.length > 0) {
+    imageUrl = await getPhotoUrl(msg.photo);
+  } else if (msg.reply_to_message && msg.reply_to_message.photo) {
+    imageUrl = await getPhotoUrl(msg.reply_to_message.photo);
   }
 
-  // Image en réponse à un message
-  if (!imageUrl && event?.messageReply?.attachments?.length) {
-    const img = event.messageReply.attachments.find(a => a.type === "photo");
-    if (img?.url) imageUrl = img.url;
+  // No text or image? (text can be empty if only image)
+  if (!input && !imageUrl) {
+    return bot.sendMessage(chatId, "💬 Please provide a message or an image.", {
+      reply_to_message_id: msg.message_id,
+    });
   }
+
+  const timestamp = moment().tz("Asia/Manila").format("MMMM D, YYYY h:mm A");
+
+  const waitMsg = await bot.sendMessage(
+    chatId,
+    `🤖 AI is thinking...\n━━━━━━━━━━━━━━━\n📅 ${timestamp}`,
+    { reply_to_message_id: msg.message_id }
+  );
 
   const createdFiles = [];
 
@@ -97,16 +100,14 @@ async function onStart({ bot, message, chatId, args, event }) {
       image_url: imageUrl || null,
     });
 
-    const {
-      reply,
-      image_url,
-      music_data,
-      video_data,
-      shoti_data,
-      lyrics_data,
-    } = res.data;
+    const { reply, image_url, music_data, video_data, shoti_data, lyrics_data } = res.data;
 
-    let text = normalizeText(reply || "✅ AI Response");
+    // Normaliser le texte (supprimer les références à l'auteur original) et enlever les astérisques
+    let text = normalizeText(reply || "✅ AI Response").replace(/\*/g, "");
+    
+    // Appliquer la police sans-serif (𝖺𝖠𝗓𝖹)
+    text = fonts.sansSerif(text);
+
     const attachments = [];
 
     if (image_url) {
@@ -129,9 +130,9 @@ async function onStart({ bot, message, chatId, args, event }) {
     }
 
     if (lyrics_data?.lyrics) {
-      text += `\n\n🎵 ${lyrics_data.track_name}\n${normalizeText(
-        lyrics_data.lyrics.slice(0, 1500)
-      )}`;
+      let lyrics = normalizeText(lyrics_data.lyrics.slice(0, 1500)).replace(/\*/g, "");
+      lyrics = fonts.sansSerif(lyrics);
+      text += `\n\n🎵 ${fonts.sansSerif(lyrics_data.track_name)}\n${lyrics}`;
     }
 
     await bot.deleteMessage(chatId, waitMsg.message_id);
@@ -141,21 +142,23 @@ async function onStart({ bot, message, chatId, args, event }) {
         if (media.type === "photo") {
           await bot.sendPhoto(chatId, fs.createReadStream(media.path), {
             caption: text,
+            reply_to_message_id: msg.message_id,
           });
         } else if (media.type === "audio") {
           await bot.sendAudio(chatId, fs.createReadStream(media.path), {
             caption: text,
+            reply_to_message_id: msg.message_id,
           });
         } else {
           await bot.sendVideo(chatId, fs.createReadStream(media.path), {
             caption: text,
+            reply_to_message_id: msg.message_id,
           });
         }
       }
     } else {
-      await message.reply(text);
+      await bot.sendMessage(chatId, text, { reply_to_message_id: msg.message_id });
     }
-
   } catch (err) {
     console.error("AI Command Error:", err);
     await bot.editMessageText("❌ An AI error occurred.", {
