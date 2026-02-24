@@ -1,5 +1,5 @@
 const axios = require("axios");
-const fonts = require("./func/fonts.js");
+const fonts = require('../../func/fonts.js');;
 
 const nix = {
   name: "copilot",
