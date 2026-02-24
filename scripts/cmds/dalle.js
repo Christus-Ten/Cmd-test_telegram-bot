@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const nix = {
+const christus = {
   name: "imagine",
   version: "1.0.0",
   aliases: ["gen", "dalle", "image"],
