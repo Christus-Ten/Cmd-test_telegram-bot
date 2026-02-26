@@ -1,133 +1,158 @@
-const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
-const ytSearch = require("yt-search");
-const { Message } = require("../../bot/custom.js");
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const yts = require('yt-search');
 
-module.exports = {
-  nix: {
-    name: "video",
-    aliases: [],
-    version: "1.4.3",
-    author: "ArYAN",
-    cooldown: 5,
-    role: 0,
-    category: "utility",
-    shortDescription: "Download YouTube video or audio",
-    longDescription: "Use '/video [name]' to search, '/video -v [YouTube URL]' for video, or '/video -a [YouTube URL]' for audio.",
-    guide: "video leja re\nvideo -v https://youtu.be/abc123\nvideo -a https://youtu.be/abc123"
-  },
+// Constants from original command
+const nc = "aryan";
+const API_CONFIG_URL = "https://raw.githubusercontent.com/noobcore404/NC-STORE/main/NCApiUrl.json";
 
-  onStart: async function ({ bot, message, msg, chatId, args, usages }) {
-    const apiKey = "itzaryan";
-    let type = "video";
-    let videoId, topResult;
-    let processingMessageId;
-    let downloadPath;
+// Cache directory for temporary files
+const CACHE_DIR = path.join(__dirname, 'cache');
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
 
-    try {
-      const mode = args[0];
-      const inputArg = args[1];
-      
-      const processingMsg = await bot.sendMessage(chatId, "📥 Fetching your media...");
-      processingMessageId = processingMsg.message_id;
-      
-      if ((mode === "-v" || mode === "-a") && inputArg) {
-        type = mode === "-a" ? "audio" : "video";
-        let urlObj;
-        try {
-          urlObj = new URL(inputArg);
-        } catch {
-          throw new Error("❌ Invalid YouTube URL.");
-        }
-        
-        if (urlObj.hostname === "youtu.be") {
-          videoId = urlObj.pathname.slice(1);
-        } else if (urlObj.hostname.includes("youtube.com")) {
-          const urlParams = new URLSearchParams(urlObj.search);
-          videoId = urlParams.get("v");
-        }
-        
-        if (!videoId) throw new Error("❌ Could not extract video ID from URL.");
-        
-        const infoRes = await axios.get(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
-        topResult = { 
-          title: infoRes.data.title || "Unknown Title", 
-          author: { name: infoRes.data.author_name || "Unknown Channel" }, 
-          timestamp: "0:00", 
-          views: 0, 
-          ago: "N/A" 
-        };
-      } else {
-        const query = args.join(" ");
-        if (!query) throw new Error("❌ Please enter a video name or YouTube URL.");
-        
-        const searchResults = await ytSearch(query);
-        if (!searchResults || !searchResults.videos.length) {
-          throw new Error("❌ No results found.");
-        }
-        
-        topResult = searchResults.videos[0];
-        videoId = topResult.videoId;
-      }
-      
-      const timestamp = topResult.timestamp || "0:00";
-      const parts = timestamp.split(":").map(Number);
-      const durationSeconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
-      
-      if (durationSeconds > 600) {
-        throw new Error(`❌ Video too long (${timestamp}). Only videos under 10 minutes are supported.`);
-      }
-
-      const apiUrl = `https://xyz-nix.vercel.app/aryan/youtube?id=${videoId}&type=${type}&apikey=${apiKey}`;
-      
-      const downloadResponse = await axios.get(apiUrl, { timeout: 30000 });
-      const downloadUrl = downloadResponse.data.downloadUrl;
-      
-      if (!downloadUrl) throw new Error("❌ Failed to get download link.");
-      
-      const response = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
-      const buffer = Buffer.from(response.data, 'binary');
-      
-      const ext = type === "audio" ? "mp3" : "mp4";
-      const safeTitle = topResult.title.replace(/[\\/:*?"<>|]/g, "").substring(0, 50);
-      const filename = `${safeTitle}.${ext}`;
-      downloadPath = path.join(__dirname, filename);
-      
-      fs.writeFileSync(downloadPath, buffer);
-      
-      const caption = `${type === "audio" ? "🎵 AUDIO INFO" : "🎬 VIDEO INFO"}\n` + 
-                      `━━━━━━━━━━━━━━━\n` + 
-                      `📌 Title: ${topResult.title}\n` + 
-                      `🎞 Duration: ${topResult.timestamp || "Unknown"}\n` + 
-                      `📺 Channel: ${topResult.author.name}\n` + 
-                      `👁 Views: ${topResult.views?.toLocaleString?.() || "N/A"}\n` + 
-                      `📅 Uploaded: ${topResult.ago || "N/A"}`;
-      
-      const options = {
-        reply_to_message_id: msg.message_id,
-        caption: caption,
-        thumb: topResult.thumbnail, // Optional thumbnail
-        duration: durationSeconds,
-        fileName: filename
-      };
-
-      if (type === "video") {
-        await bot.sendVideo(chatId, downloadPath, options);
-      } else {
-        await bot.sendAudio(chatId, downloadPath, options);
-      }
-
-    } catch (err) {
-      console.error("Error:", err.message);
-      bot.sendMessage(chatId, err.message, { reply_to_message_id: msg.message_id });
-    } finally {
-      if (processingMessageId) {
-        bot.deleteMessage(chatId, processingMessageId);
-      }
-      if (downloadPath && fs.existsSync(downloadPath)) {
-        fs.unlinkSync(downloadPath);
-      }
-    }
-  }
+const nix = {
+  name: "video",
+  version: "0.0.1",
+  aliases: ["v"],
+  description: "Download YouTube video interactively",
+  author: "Christus",
+  prefix: true,
+  category: "MUSIC",
+  role: 0,
+  cooldown: 5,
+  guide: "{p}video [video name]"
 };
+
+async function onStart({ bot, message, msg, chatId, args, usages }) {
+  if (!args.length) {
+    return bot.sendMessage(chatId, "❌ Missing video name", { reply_to_message_id: msg.message_id });
+  }
+
+  const query = args.join(" ");
+  try {
+    const searchResult = await yts(query);
+    if (!searchResult || !searchResult.videos.length) {
+      throw new Error("No video found");
+    }
+
+    const videos = searchResult.videos.slice(0, 6);
+    let listText = "🔎 Found 6 videos. Reply with the number to download\n\n";
+    const thumbPaths = [];
+
+    for (let i = 0; i < videos.length; i++) {
+      const video = videos[i];
+      const thumbPath = path.join(CACHE_DIR, `thumb_${Date.now()}_${i}.jpg`);
+
+      // Download thumbnail
+      const thumbRes = await axios.get(video.thumbnail, { responseType: 'arraybuffer' });
+      fs.writeFileSync(thumbPath, Buffer.from(thumbRes.data));
+      thumbPaths.push(thumbPath);
+
+      const views = video.views.toLocaleString();
+      listText += `${i + 1}. ${video.title}\nTime: ${video.timestamp}\nChannel: ${video.author.name}\n\n`;
+    }
+
+    // Send the text list first (this will be the message users reply to)
+    const textMsg = await bot.sendMessage(chatId, listText, { reply_to_message_id: msg.message_id });
+
+    // Send thumbnails as a media group (photo album)
+    if (thumbPaths.length > 0) {
+      const media = thumbPaths.map(p => ({
+        type: 'photo',
+        media: fs.createReadStream(p)
+      }));
+      await bot.sendMediaGroup(chatId, media, { reply_to_message_id: textMsg.message_id });
+    }
+
+    // Clean up thumbnails after sending
+    thumbPaths.forEach(p => {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    });
+
+    // Store data for reply handling
+    global.teamnix.replies.set(textMsg.message_id, {
+      type: "video_reply",
+      authorId: msg.from.id,
+      videos: videos.map(v => ({
+        title: v.title,
+        url: v.url,
+        channel: v.author.name,
+        views: v.views
+      })),
+      listMessageId: textMsg.message_id
+    });
+
+  } catch (err) {
+    console.error("Video search error:", err);
+    bot.sendMessage(chatId, `❌ Error: ${err.message}`, { reply_to_message_id: msg.message_id });
+  }
+}
+
+async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
+  // Validate that this reply belongs to a video selection
+  if (data.type !== "video_reply" || userId !== data.authorId) return;
+
+  const selection = parseInt(msg.text.trim());
+  if (isNaN(selection) || selection < 1 || selection > data.videos.length) {
+    return bot.sendMessage(chatId, "❌ Invalid selection. Choose 1-6.", { reply_to_message_id: msg.message_id });
+  }
+
+  // Try to delete the original list message to clean up
+  try {
+    await bot.deleteMessage(chatId, data.listMessageId);
+  } catch (e) {
+    // Ignore if already deleted
+  }
+
+  const selectedVideo = data.videos[selection - 1];
+  const waitMsg = await bot.sendMessage(chatId, `⏳ Downloading: ${selectedVideo.title}...`, { reply_to_message_id: msg.message_id });
+
+  try {
+    // Fetch API base URL from config
+    const configRes = await axios.get(API_CONFIG_URL);
+    const apiBase = configRes.data && configRes.data.aryan;
+    if (!apiBase) throw new Error("API Config error.");
+
+    // Request download link
+    const downloadUrl = `${apiBase}/${nc}/ytdl?url=${encodeURIComponent(selectedVideo.url)}&type=video`;
+    const dlRes = await axios.get(downloadUrl);
+    if (!dlRes.data.status || !dlRes.data.downloadUrl) {
+      throw new Error("Could not fetch download link.");
+    }
+
+    const fileUrl = dlRes.data.downloadUrl;
+    const fileName = `${Date.now()}.mp4`;
+    const filePath = path.join(CACHE_DIR, fileName);
+
+    // Download video file
+    const videoRes = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+    fs.writeFileSync(filePath, Buffer.from(videoRes.data));
+
+    const msgBody = `• Title: ${selectedVideo.title}\n• Channel: ${selectedVideo.channel}\n• Quality: ${dlRes.data.quality || '720p'}`;
+
+    // Delete waiting message
+    await bot.deleteMessage(chatId, waitMsg.message_id);
+
+    // Send video
+    await bot.sendVideo(chatId, filePath, {
+      caption: msgBody,
+      reply_to_message_id: msg.message_id
+    });
+
+    // Clean up video file
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    // Remove stored reply data
+    global.teamnix.replies.delete(replyMsg.message_id);
+
+  } catch (err) {
+    console.error("Video download error:", err);
+    await bot.deleteMessage(chatId, waitMsg.message_id);
+    bot.sendMessage(chatId, `❌ Error: ${err.message}`, { reply_to_message_id: msg.message_id });
+  }
+}
+
+module.exports = { onStart, onReply, nix };
