@@ -34,7 +34,13 @@ async function downloadFile(url, filePath) {
   });
 }
 
-async function downloadMedia(videoUrl, format, message, bot, chatId, replyToMsg) {
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+async function downloadMedia(videoUrl, format, bot, chatId, replyToMsg, fileName) {
   const apiUrl = `https://downvid.onrender.com/api/v1/download?url=${encodeURIComponent(videoUrl)}&format=${format}`;
   const { data } = await axios.get(apiUrl);
   if (data.status !== "success" || !data.downloadUrl) {
@@ -42,19 +48,18 @@ async function downloadMedia(videoUrl, format, message, bot, chatId, replyToMsg)
   }
 
   const ext = format === "mp4" ? "mp4" : "mp3";
-  const fileName = `yt_${Date.now()}.${ext}`;
-  const filePath = path.join(CACHE, fileName);
+  const filePath = path.join(CACHE, `yt_${Date.now()}.${ext}`);
 
   await downloadFile(data.downloadUrl, filePath);
 
   if (format === "mp4") {
     await bot.sendVideo(chatId, filePath, {
-      caption: "🎥 Voici votre vidéo",
+      caption: `✅ Téléchargement réussi !\n📹 ${fileName || "Vidéo YouTube"}`,
       reply_to_message_id: replyToMsg.message_id
     });
   } else {
     await bot.sendAudio(chatId, filePath, {
-      caption: "🎧 Voici votre audio",
+      caption: `✅ Téléchargement réussi !\n🎵 ${fileName || "Audio YouTube"}`,
       reply_to_message_id: replyToMsg.message_id
     });
   }
@@ -62,12 +67,18 @@ async function downloadMedia(videoUrl, format, message, bot, chatId, replyToMsg)
   fs.unlinkSync(filePath);
 }
 
-function buildList(videos, mode) {
+function buildList(videos, mode, userName) {
   const list = videos.map((v, i) => {
-    return `📍 ${i + 1}. ${v.title}\n   ⏱️ ${v.timestamp}`;
+    const duration = formatDuration(v.seconds);
+    const quality = mode === "-v" ? "360p" : "128kbps";
+    return `📍 ${i + 1}. ${v.title}\n   ⏱️ ${duration} | 🎚️ ${quality}`;
   }).join("\n\n");
 
+  const time = new Date().toLocaleString("fr-FR", { timeZone: "Africa/Abidjan" });
+
   return `📺 𝗬𝗼𝘂𝗧𝘂𝗯𝗲 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗲𝗿\n━━━━━━━━━━━━━━\n\n` +
+    `👤 ${userName}\n` +
+    `📅 ${time}\n\n` +
     `🎯 𝗦é𝗹𝗲𝗰𝘁𝗶𝗼𝗻𝗻𝗲𝘇 𝘂𝗻 𝗺é𝗱𝗶𝗮\n\n${list}\n\n` +
     `━━━━━━━━━━━━━━\n` +
     `✍️ Répondez avec un nombre (1-5)\n` +
@@ -76,6 +87,7 @@ function buildList(videos, mode) {
 
 async function onStart({ bot, message, msg, chatId, args, usages }) {
   const userId = msg.from.id;
+  const userName = msg.from.first_name || msg.from.username || "Utilisateur";
   const mode = args[0]?.toLowerCase();
 
   if (!mode) return usages();
@@ -93,7 +105,8 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
     );
 
     try {
-      await downloadMedia(url, format, message, bot, chatId, msg);
+      const fileName = url.split('v=')[1] || "YouTube";
+      await downloadMedia(url, format, bot, chatId, msg, fileName);
       await bot.deleteMessage(chatId, loadingMsg.message_id);
     } catch (error) {
       await bot.deleteMessage(chatId, loadingMsg.message_id);
@@ -154,13 +167,12 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
       media: thumb
     }));
 
-    const sentMedia = await bot.sendMediaGroup(chatId, mediaGroup, {
+    await bot.sendMediaGroup(chatId, mediaGroup, {
       reply_to_message_id: msg.message_id
     });
-    const lastMsgId = Array.isArray(sentMedia) ? sentMedia[sentMedia.length - 1].message_id : sentMedia.message_id;
 
     const listMsg = await bot.sendMessage(chatId,
-      buildList(videos, mode),
+      buildList(videos, mode, userName),
       { reply_to_message_id: msg.message_id }
     );
 
@@ -173,8 +185,7 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
       type: "ytb_reply",
       authorId: userId,
       results: videos,
-      mode: mode,
-      query: query
+      mode: mode
     });
 
     setTimeout(() => {
@@ -214,12 +225,12 @@ async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
   global.teamnix.replies.delete(replyMsg.message_id);
 
   const loadingMsg = await bot.sendMessage(chatId,
-    `⏳ Téléchargement de "${selected.title}"...\n⏱️ Durée: ${selected.timestamp}`,
+    `⏳ Téléchargement de "${selected.title}"...\n⏱️ Durée: ${formatDuration(selected.seconds)}`,
     { reply_to_message_id: msg.message_id }
   );
 
   try {
-    await downloadMedia(selected.url, format, message, bot, chatId, msg);
+    await downloadMedia(selected.url, format, bot, chatId, msg, selected.title);
     await bot.deleteMessage(chatId, loadingMsg.message_id);
   } catch (error) {
     await bot.deleteMessage(chatId, loadingMsg.message_id);
