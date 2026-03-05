@@ -231,6 +231,7 @@ async function onStart({ bot, message, msg, chatId, args, usages }) {
 
     // Stocker les données pour la session de reply
     global.teamnix.replies.set(sentMsg.message_id, {
+      nix, // ⚠️ IMPORTANT : inclure la référence à la commande pour le système de reply
       type: "pinterest_reply",
       authorId: msg.from.id,
       allImageUrls,
@@ -297,9 +298,9 @@ async function onReply({ bot, message, msg, chatId, userId, data, replyMsg }) {
         if (err) console.error("Erreur suppression canvas:", err);
       });
 
-      // Mettre à jour la session
+      // Mettre à jour la session en conservant toutes les données, y compris `nix`
       global.teamnix.replies.set(sentMsg.message_id, {
-        ...data,
+        ...data, // data contient déjà nix grâce à la session précédente
         currentPage: nextPage,
         displayedMap: nextDisplayedMap,
         displayCount: nextDisplayedMap.length
